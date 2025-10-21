@@ -37,12 +37,17 @@ class MainFrame(wx.Frame):
         # 기본 폰트 설정 (일관성 있는 폰트 사용)
         self.default_font = wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
 
+        # 로그 윈도우
+        self.log_window = None
+        self.log_buffer = []  # 로그 버퍼 (윈도우가 열리기 전 메시지 저장)
+
         self.init_ui()
         self.Centre()
         self.CreateStatusBar()
         self.update_status_bar()
 
         logger.info("MainFrame 초기화 완료")
+        self.log_message("로그 수집 유틸리티 시작", "INFO")
 
     def init_ui(self):
         """UI 초기화"""
@@ -73,6 +78,12 @@ class MainFrame(wx.Frame):
         exit_item = file_menu.Append(wx.ID_EXIT, "종료\tCtrl+Q")
         self.Bind(wx.EVT_MENU, self.on_quit, exit_item)
         menubar.Append(file_menu, "파일(&F)")
+
+        # 보기 메뉴
+        view_menu = wx.Menu()
+        log_window_item = view_menu.Append(wx.ID_ANY, "로그 메시지\tCtrl+L")
+        self.Bind(wx.EVT_MENU, self.on_show_log_window, log_window_item)
+        menubar.Append(view_menu, "보기(&V)")
 
         # 설정 메뉴
         settings_menu = wx.Menu()
@@ -364,6 +375,8 @@ class MainFrame(wx.Frame):
 
         self.update_status_bar()
 
+        self.log_message(f"SSH 연결 성공: {ip}:{port}", "SUCCESS")
+
         wx.MessageBox("SSH 연결에 성공했습니다.", "연결 성공",
                      wx.OK | wx.ICON_INFORMATION)
 
@@ -379,6 +392,8 @@ class MainFrame(wx.Frame):
         self.connection_status.SetForegroundColour(wx.Colour(128, 128, 128))
 
         self.update_status_bar()
+
+        self.log_message(f"SSH 연결 실패: {error_message}", "ERROR")
 
         wx.MessageBox(f"SSH 연결 실패:\n{error_message}", "연결 오류",
                      wx.OK | wx.ICON_ERROR)
@@ -401,9 +416,11 @@ class MainFrame(wx.Frame):
             self.update_status_bar()
 
             logger.info("SSH 연결 종료")
+            self.log_message("SSH 연결 종료", "INFO")
 
         except Exception as e:
             logger.error(f"SSH 연결 종료 중 오류: {e}")
+            self.log_message(f"SSH 연결 종료 중 오류: {e}", "ERROR")
 
     def enable_remote_controls(self, enabled):
         """원격 로그 컨트롤 활성화/비활성화"""
@@ -620,6 +637,8 @@ class MainFrame(wx.Frame):
                 config = self.settings.get_log_source_config(log_type)
                 save_path = self.settings.get_save_path()
 
+                wx.CallAfter(self.log_message, f"{config.get_display_name()} 수집 시작", "INFO")
+
                 # 파일 수집
                 result = self.file_collector.collect_logs(
                     config,
@@ -627,6 +646,16 @@ class MainFrame(wx.Frame):
                     progress_callback=lambda p: wx.CallAfter(self.update_progress, p),
                     cancel_token=self.cancel_token
                 )
+
+                # 결과 로그
+                if result.success:
+                    wx.CallAfter(self.log_message,
+                               f"{config.get_display_name()} 수집 완료: {result.collected_files}개 파일",
+                               "SUCCESS")
+                else:
+                    wx.CallAfter(self.log_message,
+                               f"{config.get_display_name()} 수집 실패: {result.error_message}",
+                               "ERROR")
 
                 # 결과 표시
                 wx.CallAfter(self.show_collection_result, result)
@@ -875,7 +904,34 @@ class MainFrame(wx.Frame):
             # 경로 텍스트 업데이트
             controls['path_text'].SetLabel(config.path)
 
-            # 압축/삭제 체크박스 업데이트
-            controls['compress_check'].SetValue(config.compress)
-
         logger.info("설정 변경 후 UI 업데이트 완료")
+
+    def on_show_log_window(self, event):
+        """로그 윈도우 표시"""
+        if self.log_window is None or not self.log_window:
+            from ui.log_window import LogWindow
+            self.log_window = LogWindow(self)
+
+            # 버퍼에 저장된 로그 메시지를 모두 출력
+            for msg, lvl in self.log_buffer:
+                self.log_window.append_log(msg, lvl)
+
+        self.log_window.Show()
+        self.log_window.Raise()
+
+    def log_message(self, message, level="INFO"):
+        """
+        로그 메시지 출력 (항상 버퍼에 저장하고, 윈도우가 열려있으면 즉시 표시)
+
+        Args:
+            message: 로그 메시지
+            level: 로그 레벨 (INFO, WARNING, ERROR, DEBUG, SUCCESS)
+        """
+        # 버퍼에 저장 (최대 1000개 메시지만 유지)
+        self.log_buffer.append((message, level))
+        if len(self.log_buffer) > 1000:
+            self.log_buffer.pop(0)
+
+        # 로그 윈도우가 열려있으면 메시지 추가
+        if self.log_window and self.log_window.IsShown():
+            wx.CallAfter(self.log_window.append_log, message, level)
