@@ -21,7 +21,9 @@ class MainFrame(wx.Frame):
     """메인 프레임"""
 
     def __init__(self):
-        super().__init__(None, title="로그 수집 유틸리티", size=(1100, 800))
+        super().__init__(None, title="로그 수집 유틸리티",
+                        size=(1000, 800),
+                        style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX))
 
         self.settings = SettingsManager()
         self.ssh_manager = SSHManager()
@@ -60,9 +62,6 @@ class MainFrame(wx.Frame):
         # 진행 상황 그룹
         self.create_progress_section(panel, main_sizer)
 
-        # 저장 경로 그룹
-        self.create_save_path_section(panel, main_sizer)
-
         panel.SetSizer(main_sizer)
 
     def create_menubar(self):
@@ -80,12 +79,6 @@ class MainFrame(wx.Frame):
         settings_item = settings_menu.Append(wx.ID_ANY, "설정\tCtrl+S")
         self.Bind(wx.EVT_MENU, self.on_settings, settings_item)
         menubar.Append(settings_menu, "설정(&S)")
-
-        # 도움말 메뉴
-        help_menu = wx.Menu()
-        about_item = help_menu.Append(wx.ID_ABOUT, "정보")
-        self.Bind(wx.EVT_MENU, self.on_about, about_item)
-        menubar.Append(help_menu, "도움말(&H)")
 
         self.SetMenuBar(menubar)
 
@@ -173,6 +166,9 @@ class MainFrame(wx.Frame):
 
         content_sizer.Add(option_sizer, 1, wx.ALL | wx.EXPAND, 5)
 
+        # 날짜 선택 시 힌트를 표시하기 위한 임시 변수 저장
+        date_hint_info = {'log_type': log_type, 'panel': content_panel}
+
         # 구분선
         content_sizer.Add(wx.StaticLine(content_panel, style=wx.LI_VERTICAL),
                          0, wx.EXPAND | wx.ALL, 5)
@@ -185,8 +181,16 @@ class MainFrame(wx.Frame):
         filter_ctrl.SetHint("필터 조건")
         filter_sizer.Add(filter_ctrl, 0, wx.EXPAND | wx.BOTTOM, 5)
 
-        compress_check = wx.CheckBox(content_panel, label="압축")
-        filter_sizer.Add(compress_check, 0)
+        # 날짜 라디오 버튼 선택 시 힌트 업데이트
+        def on_date_selected(event):
+            if rb_date.GetValue():
+                filter_ctrl.SetHint("YYYY-MM-DD 또는 YYYY-MM-DD HH:MM:SS 형식 (예: 2025-10-21 14:30:00)")
+            else:
+                filter_ctrl.SetHint("필터 조건")
+
+        rb_date.Bind(wx.EVT_RADIOBUTTON, on_date_selected)
+        rb_all.Bind(wx.EVT_RADIOBUTTON, on_date_selected)
+        rb_regex.Bind(wx.EVT_RADIOBUTTON, on_date_selected)
 
         content_sizer.Add(filter_sizer, 1, wx.ALL | wx.EXPAND, 5)
 
@@ -230,7 +234,6 @@ class MainFrame(wx.Frame):
             'rb_regex': rb_regex,
             'rb_date': rb_date,
             'filter_ctrl': filter_ctrl,
-            'compress_check': compress_check,
             'list_btn': list_btn,
             'collect_btn': collect_btn,
             'delete_btn': delete_btn,
@@ -264,20 +267,6 @@ class MainFrame(wx.Frame):
 
         parent_sizer.Add(progress_sizer, 0, wx.ALL | wx.EXPAND, 5)
 
-    def create_save_path_section(self, panel, parent_sizer):
-        """저장 경로 섹션 생성"""
-        save_box = wx.StaticBox(panel, label="저장 경로")
-        save_sizer = wx.StaticBoxSizer(save_box, wx.HORIZONTAL)
-
-        save_path = self.settings.get_save_path()
-        self.save_path_ctrl = wx.TextCtrl(panel, value=save_path)
-        save_sizer.Add(self.save_path_ctrl, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-
-        browse_btn = wx.Button(panel, label="찾아보기...")
-        browse_btn.Bind(wx.EVT_BUTTON, self.on_browse_save_path)
-        save_sizer.Add(browse_btn, 0)
-
-        parent_sizer.Add(save_sizer, 0, wx.ALL | wx.EXPAND, 5)
 
     def on_toggle_connection(self, event):
         """SSH 연결/종료 토글"""
@@ -500,7 +489,7 @@ class MainFrame(wx.Frame):
 
                 # 설정 로드
                 config = self.settings.get_log_source_config(log_type)
-                save_path = self.save_path_ctrl.GetValue()
+                save_path = self.settings.get_save_path()
 
                 # 파일 수집
                 result = self.file_collector.collect_logs(
@@ -538,7 +527,7 @@ class MainFrame(wx.Frame):
                 wx.CallAfter(self.stop_btn.Enable, True)
 
                 # 저장 경로
-                save_path = self.save_path_ctrl.GetValue()
+                save_path = self.settings.get_save_path()
 
                 # 선택한 파일 수집
                 result = self.file_collector.collect_selected_files(
@@ -698,19 +687,6 @@ class MainFrame(wx.Frame):
         self.cancel_token.cancel()
         self.progress_text.SetLabel("취소 중...")
 
-    def on_browse_save_path(self, event):
-        """저장 경로 찾아보기"""
-        dlg = wx.DirDialog(self, "저장 경로 선택",
-                          defaultPath=self.save_path_ctrl.GetValue(),
-                          style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST)
-
-        if dlg.ShowModal() == wx.ID_OK:
-            path = dlg.GetPath()
-            self.save_path_ctrl.SetValue(path)
-            self.settings.set_save_path(path)
-            self.settings.save()
-
-        dlg.Destroy()
 
     def on_settings(self, event):
         """설정 다이얼로그 표시"""
@@ -735,16 +711,6 @@ class MainFrame(wx.Frame):
             wx.MessageBox(f"설정 다이얼로그 오류:\n{str(e)}", "오류",
                          wx.OK | wx.ICON_ERROR)
 
-    def on_about(self, event):
-        """정보 다이얼로그"""
-        info = wx.adv.AboutDialogInfo()
-        info.SetName("로그 수집 유틸리티")
-        info.SetVersion("1.0.0")
-        info.SetDescription("리눅스 및 윈도우 로그 파일 수집 도구\n\n"
-                          "SSH/SFTP를 통한 원격 로그 수집\n"
-                          "로컬 파일 복사 및 압축")
-        wx.adv.AboutBox(info)
-
     def on_quit(self, event):
         """프로그램 종료"""
         # SSH 연결 종료
@@ -766,10 +732,6 @@ class MainFrame(wx.Frame):
 
     def refresh_ui_from_settings(self):
         """설정 변경 후 UI 업데이트"""
-        # 저장 경로 업데이트
-        save_path = self.settings.get_save_path()
-        self.save_path_ctrl.SetValue(save_path)
-
         # 각 로그 섹션의 경로 텍스트 업데이트
         for log_type in [LogSourceType.LINUX_KERNEL, LogSourceType.LINUX_SERVER, LogSourceType.WINDOWS_CLIENT]:
             config = self.settings.get_log_source_config(log_type)
