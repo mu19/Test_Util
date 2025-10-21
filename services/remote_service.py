@@ -317,3 +317,95 @@ class RemoteFileService:
 
         logger.info(f"원격 파일 일괄 다운로드 완료: 성공 {success_count}개, 실패 {fail_count}개")
         return success_count, fail_count
+
+    def compress_files_remote(self,
+                             file_list: List[str],
+                             archive_path: str,
+                             archive_type: str = "tar.gz") -> bool:
+        """
+        원격 서버에서 파일들을 압축
+
+        Args:
+            file_list: 압축할 파일 경로 리스트
+            archive_path: 압축 파일 저장 경로 (원격)
+            archive_type: 압축 타입 ("tar.gz" 또는 "gz")
+
+        Returns:
+            압축 성공 여부
+
+        Raises:
+            SSHConnectionError: SSH 연결되지 않음
+        """
+        logger.info(f"원격 파일 압축 시작: {len(file_list)}개 파일 -> {archive_path}")
+
+        if not self.ssh_manager.is_connected():
+            raise SSHConnectionError("SSH에 연결되지 않았습니다.")
+
+        try:
+            if archive_type == "tar.gz":
+                # tar.gz 압축
+                # 파일 목록을 문자열로 변환
+                files_str = " ".join([f'"{f}"' for f in file_list])
+                command = f'tar -czf "{archive_path}" {files_str}'
+            elif archive_type == "gz":
+                # 단일 파일 gzip 압축
+                if len(file_list) != 1:
+                    raise ValueError("gz 압축은 단일 파일만 지원합니다.")
+                command = f'gzip -c "{file_list[0]}" > "{archive_path}"'
+            else:
+                raise ValueError(f"지원하지 않는 압축 타입: {archive_type}")
+
+            logger.debug(f"압축 명령 실행: {command}")
+            stdout, stderr, exit_code = self.execute_command(command, timeout=300)
+
+            if exit_code == 0:
+                logger.info(f"원격 파일 압축 완료: {archive_path}")
+                return True
+            else:
+                logger.error(f"원격 파일 압축 실패: {stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"원격 파일 압축 중 오류: {e}")
+            raise
+
+    def compress_directory_remote(self,
+                                  directory_path: str,
+                                  archive_path: str,
+                                  file_pattern: str = "*") -> bool:
+        """
+        원격 서버에서 디렉토리를 압축 (패턴 기반 필터링 가능)
+
+        Args:
+            directory_path: 압축할 디렉토리 경로
+            archive_path: 압축 파일 저장 경로 (원격)
+            file_pattern: 포함할 파일 패턴 (예: "*.log")
+
+        Returns:
+            압축 성공 여부
+
+        Raises:
+            SSHConnectionError: SSH 연결되지 않음
+        """
+        logger.info(f"원격 디렉토리 압축: {directory_path} -> {archive_path}")
+
+        if not self.ssh_manager.is_connected():
+            raise SSHConnectionError("SSH에 연결되지 않았습니다.")
+
+        try:
+            # 디렉토리 이동 후 압축
+            command = f'cd "{directory_path}" && tar -czf "{archive_path}" {file_pattern}'
+
+            logger.debug(f"디렉토리 압축 명령 실행: {command}")
+            stdout, stderr, exit_code = self.execute_command(command, timeout=300)
+
+            if exit_code == 0:
+                logger.info(f"원격 디렉토리 압축 완료: {archive_path}")
+                return True
+            else:
+                logger.error(f"원격 디렉토리 압축 실패: {stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"원격 디렉토리 압축 중 오류: {e}")
+            raise
