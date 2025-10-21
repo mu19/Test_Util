@@ -138,6 +138,18 @@ class MainFrame(wx.Frame):
             wx.Colour(221, 160, 221)
         )
 
+        # 전체 수집 버튼
+        collect_all_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        self.collect_all_btn = wx.Button(panel, label="전체 수집", size=(-1, 40))
+        self.collect_all_btn.SetFont(wx.Font(11, wx.FONTFAMILY_DEFAULT,
+                                              wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.collect_all_btn.Bind(wx.EVT_BUTTON, self.on_collect_all)
+        self.collect_all_btn.Enable(False)  # 초기에는 비활성화
+        collect_all_sizer.Add(self.collect_all_btn, 1, wx.ALL | wx.EXPAND, 5)
+
+        log_sizer.Add(collect_all_sizer, 0, wx.EXPAND | wx.TOP, 5)
+
         parent_sizer.Add(log_sizer, 0, wx.ALL | wx.EXPAND, 5)
 
     def create_log_section(self, panel, parent_sizer, title, log_type, color):
@@ -148,38 +160,37 @@ class MainFrame(wx.Frame):
 
         # 내용 패널
         content_panel = wx.Panel(panel)
-        content_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        content_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # 수집 옵션 (1열)
-        option_sizer = wx.BoxSizer(wx.VERTICAL)
-        option_sizer.Add(wx.StaticText(content_panel, label="수집 옵션"), 0, wx.BOTTOM, 5)
+        # 1행: 수집 옵션
+        option_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        option_sizer.Add(wx.StaticText(content_panel, label="수집 옵션:"),
+                        0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
         rb_all = wx.RadioButton(content_panel, label="전체", style=wx.RB_GROUP)
         rb_all.SetValue(True)
-        option_sizer.Add(rb_all, 0, wx.BOTTOM, 2)
+        option_sizer.Add(rb_all, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
         rb_regex = wx.RadioButton(content_panel, label="정규식")
-        option_sizer.Add(rb_regex, 0, wx.BOTTOM, 2)
+        option_sizer.Add(rb_regex, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
         rb_date = wx.RadioButton(content_panel, label="날짜")
-        option_sizer.Add(rb_date, 0)
+        option_sizer.Add(rb_date, 0, wx.ALIGN_CENTER_VERTICAL)
 
-        content_sizer.Add(option_sizer, 1, wx.ALL | wx.EXPAND, 5)
-
-        # 날짜 선택 시 힌트를 표시하기 위한 임시 변수 저장
-        date_hint_info = {'log_type': log_type, 'panel': content_panel}
+        content_sizer.Add(option_sizer, 0, wx.ALL | wx.EXPAND, 5)
 
         # 구분선
-        content_sizer.Add(wx.StaticLine(content_panel, style=wx.LI_VERTICAL),
-                         0, wx.EXPAND | wx.ALL, 5)
+        content_sizer.Add(wx.StaticLine(content_panel, style=wx.LI_HORIZONTAL),
+                         0, wx.EXPAND | wx.LEFT | wx.RIGHT, 5)
 
-        # 필터/옵션 (2열)
-        filter_sizer = wx.BoxSizer(wx.VERTICAL)
-        filter_sizer.Add(wx.StaticText(content_panel, label="필터/옵션"), 0, wx.BOTTOM, 5)
+        # 2행: 필터 조건
+        filter_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        filter_sizer.Add(wx.StaticText(content_panel, label="필터 조건:"),
+                        0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
-        filter_ctrl = wx.TextCtrl(content_panel, size=(200, -1))
+        filter_ctrl = wx.TextCtrl(content_panel, size=(400, -1))
         filter_ctrl.SetHint("필터 조건")
-        filter_sizer.Add(filter_ctrl, 0, wx.EXPAND | wx.BOTTOM, 5)
+        filter_sizer.Add(filter_ctrl, 1, wx.ALIGN_CENTER_VERTICAL)
 
         # 날짜 라디오 버튼 선택 시 힌트 업데이트
         def on_date_selected(event):
@@ -192,30 +203,31 @@ class MainFrame(wx.Frame):
         rb_all.Bind(wx.EVT_RADIOBUTTON, on_date_selected)
         rb_regex.Bind(wx.EVT_RADIOBUTTON, on_date_selected)
 
-        content_sizer.Add(filter_sizer, 1, wx.ALL | wx.EXPAND, 5)
+        content_sizer.Add(filter_sizer, 0, wx.ALL | wx.EXPAND, 5)
 
         # 구분선
-        content_sizer.Add(wx.StaticLine(content_panel, style=wx.LI_VERTICAL),
-                         0, wx.EXPAND | wx.ALL, 5)
+        content_sizer.Add(wx.StaticLine(content_panel, style=wx.LI_HORIZONTAL),
+                         0, wx.EXPAND | wx.LEFT | wx.RIGHT, 5)
 
-        # 실행 버튼 (3열)
-        action_sizer = wx.BoxSizer(wx.VERTICAL)
-        action_sizer.Add(wx.StaticText(content_panel, label="실행"), 0, wx.BOTTOM, 5)
+        # 3행: 실행 버튼
+        action_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        action_sizer.Add(wx.StaticText(content_panel, label="실행:"),
+                        0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
         list_btn = wx.Button(content_panel, label="목록")
         list_btn.Bind(wx.EVT_BUTTON,
                      lambda e: self.on_show_file_list(log_type))
-        action_sizer.Add(list_btn, 0, wx.EXPAND | wx.BOTTOM, 2)
+        action_sizer.Add(list_btn, 0, wx.RIGHT, 5)
 
         collect_btn = wx.Button(content_panel, label="수집")
         collect_btn.Bind(wx.EVT_BUTTON, lambda e: self.on_collect(log_type))
-        action_sizer.Add(collect_btn, 0, wx.EXPAND | wx.BOTTOM, 2)
+        action_sizer.Add(collect_btn, 0, wx.RIGHT, 5)
 
         delete_btn = wx.Button(content_panel, label="삭제")
         delete_btn.Bind(wx.EVT_BUTTON, lambda e: self.on_delete(log_type))
-        action_sizer.Add(delete_btn, 0, wx.EXPAND)
+        action_sizer.Add(delete_btn, 0)
 
-        content_sizer.Add(action_sizer, 1, wx.ALL | wx.EXPAND, 5)
+        content_sizer.Add(action_sizer, 0, wx.ALL | wx.EXPAND, 5)
 
         content_panel.SetSizer(content_sizer)
         section_sizer.Add(content_panel, 1, wx.EXPAND)
@@ -400,6 +412,9 @@ class MainFrame(wx.Frame):
             controls['collect_btn'].Enable(enabled)
             controls['delete_btn'].Enable(enabled)
 
+        # 전체 수집 버튼도 활성화/비활성화
+        self.collect_all_btn.Enable(enabled)
+
     def on_show_file_list(self, log_type):
         """파일 목록 다이얼로그 표시"""
         # 연결 확인
@@ -474,6 +489,120 @@ class MainFrame(wx.Frame):
 
         # 백그라운드 스레드에서 수집
         self.start_collection(log_type)
+
+    def on_collect_all(self, event):
+        """전체 로그 수집"""
+        # SSH 연결 확인
+        if not self.ssh_connected:
+            wx.MessageBox("먼저 SSH에 연결해주세요.", "알림",
+                         wx.OK | wx.ICON_WARNING)
+            return
+
+        # 확인 메시지
+        result = wx.MessageBox(
+            "3가지 로그를 모두 수집하시겠습니까?\n\n"
+            "- 제어기 커널 로그\n"
+            "- 제어기 로그\n"
+            "- 사용자 SW 로그",
+            "전체 수집 확인",
+            wx.YES_NO | wx.ICON_QUESTION
+        )
+
+        if result != wx.YES:
+            return
+
+        # 순차적으로 수집
+        self.start_all_collection()
+
+    def start_all_collection(self):
+        """모든 로그 순차 수집"""
+        if self.downloading:
+            wx.MessageBox("이미 다운로드가 진행 중입니다.", "알림",
+                         wx.OK | wx.ICON_WARNING)
+            return
+
+        def collection_worker():
+            try:
+                self.downloading = True
+                wx.CallAfter(self.stop_btn.Enable, True)
+
+                save_path = self.settings.get_save_path()
+                all_results = []
+
+                # 3가지 로그 타입 순차 수집
+                log_types = [
+                    LogSourceType.LINUX_KERNEL,
+                    LogSourceType.LINUX_SERVER,
+                    LogSourceType.WINDOWS_CLIENT
+                ]
+
+                for log_type in log_types:
+                    # 취소 확인
+                    if self.cancel_token.is_cancelled():
+                        break
+
+                    config = self.settings.get_log_source_config(log_type)
+
+                    # 진행 상황 표시
+                    wx.CallAfter(
+                        self.progress_text.SetLabel,
+                        f"{config.get_display_name()} 수집 중..."
+                    )
+
+                    # 파일 수집
+                    result = self.file_collector.collect_logs(
+                        config,
+                        save_path,
+                        progress_callback=lambda p: wx.CallAfter(self.update_progress, p),
+                        cancel_token=self.cancel_token
+                    )
+
+                    all_results.append((config.get_display_name(), result))
+
+                # 전체 결과 표시
+                wx.CallAfter(self.show_all_collection_result, all_results)
+
+            except Exception as e:
+                logger.error(f"전체 로그 수집 중 오류: {e}")
+                wx.CallAfter(wx.MessageBox, f"전체 로그 수집 실패:\n{str(e)}",
+                           "오류", wx.OK | wx.ICON_ERROR)
+            finally:
+                self.downloading = False
+                wx.CallAfter(self.stop_btn.Enable, False)
+                self.cancel_token.reset()
+
+        thread = threading.Thread(target=collection_worker, daemon=True)
+        thread.start()
+
+    def show_all_collection_result(self, all_results):
+        """전체 수집 결과 표시"""
+        message_parts = ["전체 로그 수집 완료!\n"]
+
+        total_collected = 0
+        total_failed = 0
+
+        for log_name, result in all_results:
+            if result.success:
+                message_parts.append(
+                    f"\n✓ {log_name}: {result.collected_files}개 파일 수집"
+                )
+                total_collected += result.collected_files
+            else:
+                message_parts.append(
+                    f"\n✗ {log_name}: 수집 실패 ({result.error_message})"
+                )
+                total_failed += 1
+
+        message_parts.append(f"\n\n총 {total_collected}개 파일 수집 완료")
+        if total_failed > 0:
+            message_parts.append(f"\n실패: {total_failed}개 로그 타입")
+
+        wx.MessageBox("".join(message_parts), "전체 수집 완료",
+                     wx.OK | wx.ICON_INFORMATION)
+
+        # 진행률 초기화
+        self.progress_text.SetLabel("대기 중...")
+        self.progress_bar.SetValue(0)
 
     def start_collection(self, log_type):
         """로그 수집 시작 (백그라운드)"""
