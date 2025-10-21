@@ -8,7 +8,36 @@ import logging
 import os
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable
+
+
+class UILogHandler(logging.Handler):
+    """UI 로그 윈도우로 로그를 출력하는 핸들러"""
+
+    def __init__(self, log_callback: Callable[[str, str], None]):
+        """
+        초기화
+
+        Args:
+            log_callback: 로그 메시지를 UI로 전달할 콜백 함수 (message, level)
+        """
+        super().__init__()
+        self.log_callback = log_callback
+
+    def emit(self, record):
+        """로그 레코드를 UI로 전달"""
+        try:
+            # 로그 레벨 이름 가져오기
+            level = record.levelname
+
+            # 로그 메시지 포맷팅
+            msg = self.format(record)
+
+            # UI 콜백 호출
+            if self.log_callback:
+                self.log_callback(msg, level)
+        except Exception:
+            self.handleError(record)
 
 
 class LoggerManager:
@@ -64,12 +93,16 @@ class LoggerManager:
         # 파일 핸들러 추가
         if log_to_file:
             if log_dir is None:
-                # 기본 로그 디렉토리: %APPDATA%/LogCollector/logs
-                log_dir = os.path.join(
-                    os.getenv('APPDATA', '.'),
-                    'LogCollector',
-                    'logs'
-                )
+                # 기본 로그 디렉토리: 프로그램 실행 폴더/logs
+                import sys
+                if getattr(sys, 'frozen', False):
+                    # PyInstaller로 패키징된 경우
+                    app_dir = os.path.dirname(sys.executable)
+                else:
+                    # 개발 환경
+                    app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+                log_dir = os.path.join(app_dir, 'logs')
 
             # 로그 디렉토리 생성
             Path(log_dir).mkdir(parents=True, exist_ok=True)
@@ -109,6 +142,41 @@ class LoggerManager:
             return logging.getLogger(f"LogCollector.{name}")
         return cls._logger
 
+    @classmethod
+    def add_ui_handler(cls, log_callback: Callable[[str, str], None]) -> None:
+        """
+        UI 로그 핸들러 추가
+
+        Args:
+            log_callback: 로그 메시지를 UI로 전달할 콜백 함수
+        """
+        if cls._logger is None:
+            cls.setup_logger()
+
+        # UI 핸들러 생성
+        ui_handler = UILogHandler(log_callback)
+        ui_handler.setLevel(logging.DEBUG)
+
+        # 포맷터 설정 (타임스탬프 제외 - UI에서 추가)
+        formatter = logging.Formatter(
+            fmt='%(name)s | %(message)s'
+        )
+        ui_handler.setFormatter(formatter)
+
+        # 루트 로거에 핸들러 추가
+        cls._logger.addHandler(ui_handler)
+
+    @classmethod
+    def remove_ui_handler(cls) -> None:
+        """UI 로그 핸들러 제거"""
+        if cls._logger is None:
+            return
+
+        # UILogHandler 타입의 핸들러만 제거
+        handlers_to_remove = [h for h in cls._logger.handlers if isinstance(h, UILogHandler)]
+        for handler in handlers_to_remove:
+            cls._logger.removeHandler(handler)
+
 
 # 편의 함수
 def setup_logger(name: str = "LogCollector",
@@ -141,6 +209,21 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
         로거 인스턴스
     """
     return LoggerManager.get_logger(name)
+
+
+def add_ui_handler(log_callback: Callable[[str, str], None]) -> None:
+    """
+    UI 로그 핸들러 추가 편의 함수
+
+    Args:
+        log_callback: 로그 메시지를 UI로 전달할 콜백 함수
+    """
+    LoggerManager.add_ui_handler(log_callback)
+
+
+def remove_ui_handler() -> None:
+    """UI 로그 핸들러 제거 편의 함수"""
+    LoggerManager.remove_ui_handler()
 
 
 # 로그 레벨 상수

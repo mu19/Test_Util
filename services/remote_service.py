@@ -344,22 +344,57 @@ class RemoteFileService:
         try:
             if archive_type == "tar.gz":
                 # tar.gz 압축
-                # 파일 목록을 문자열로 변환
-                files_str = " ".join([f'"{f}"' for f in file_list])
-                command = f'tar -czf "{archive_path}" {files_str}'
+                # 모든 파일이 같은 디렉토리에 있다고 가정
+                if file_list:
+                    import os
+                    # 첫 번째 파일의 디렉토리 경로 추출
+                    base_dir = os.path.dirname(file_list[0])
+                    # 상대 경로로 파일명만 추출
+                    relative_files = [os.path.basename(f) for f in file_list]
+                    files_str = " ".join([f'"{f}"' for f in relative_files])
+
+                    # 디렉토리로 이동 후 상대 경로로 압축 (stderr를 캡처하기 위해 2>&1 사용)
+                    command = f'cd "{base_dir}" && tar --ignore-failed-read -czf "{archive_path}" {files_str} 2>&1'
+                else:
+                    logger.warning("압축할 파일 목록이 비어있습니다.")
+                    return False
             elif archive_type == "gz":
                 # 단일 파일 gzip 압축
                 if len(file_list) != 1:
                     raise ValueError("gz 압축은 단일 파일만 지원합니다.")
-                command = f'gzip -c "{file_list[0]}" > "{archive_path}"'
+                command = f'gzip -c "{file_list[0]}" > "{archive_path}" 2>&1'
             else:
                 raise ValueError(f"지원하지 않는 압축 타입: {archive_type}")
 
             logger.debug(f"압축 명령 실행: {command}")
             stdout, stderr, exit_code = self.execute_command(command, timeout=300)
 
-            if exit_code == 0:
+            # stderr 파싱하여 실패한 파일 목록 추출
+            failed_files = []
+            if stderr:
+                for line in stderr.split('\n'):
+                    if 'Cannot open' in line or 'Permission denied' in line:
+                        # 파일명 추출 (예: "tar: /var/log/btmp: Cannot open: Permission denied")
+                        parts = line.split(':')
+                        if len(parts) >= 2:
+                            failed_file = parts[1].strip()
+                            if failed_file and failed_file not in failed_files:
+                                failed_files.append(failed_file)
+
+            # exit_code가 0 또는 1이면 성공으로 처리 (일부 파일 권한 오류는 무시)
+            if exit_code in [0, 1]:
                 logger.info(f"원격 파일 압축 완료: {archive_path}")
+
+                # 실패한 파일이 있으면 경고 로그 출력
+                if failed_files:
+                    logger.warning(f"압축 실패한 파일 수: {len(failed_files)}개")
+                    for failed_file in failed_files:
+                        logger.warning(f"  - 압축 실패: {failed_file} (권한 없음)")
+
+                # 전체 경고 메시지도 출력
+                if stderr and exit_code == 1:
+                    logger.debug(f"압축 중 경고 메시지: {stderr}")
+
                 return True
             else:
                 logger.error(f"원격 파일 압축 실패: {stderr}")

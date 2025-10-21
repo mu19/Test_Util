@@ -304,6 +304,6 @@ class CompressionHandler:
 
         if timestamp:
             ts = datetime.now().strftime('%Y-%m-%d %H.%M.%S')
-            return f"{base_name}_{{{ts}}}{extension}"
+            return f"{base_name}_{ts}{extension}"
         else:
             return f"{base_name}{extension}"

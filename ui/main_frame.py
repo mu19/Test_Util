@@ -12,7 +12,7 @@ from core.models import SSHConfig, LogSourceType, LogSourceConfig, CancelToken, 
 from core.ssh_manager import SSHManager, SSHConnectionError
 from core.file_collector import FileCollector
 from config.settings import SettingsManager
-from utils.logger import get_logger
+from utils.logger import get_logger, add_ui_handler
 
 logger = get_logger("MainFrame")
 
@@ -22,7 +22,7 @@ class MainFrame(wx.Frame):
 
     def __init__(self):
         super().__init__(None, title="로그 수집 유틸리티",
-                        size=(1000, 800),
+                        size=(650, 800),
                         style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX))
 
         self.settings = SettingsManager()
@@ -40,6 +40,9 @@ class MainFrame(wx.Frame):
         # 로그 윈도우
         self.log_window = None
         self.log_buffer = []  # 로그 버퍼 (윈도우가 열리기 전 메시지 저장)
+
+        # Python 로그를 UI로 리다이렉트
+        add_ui_handler(self._ui_log_callback)
 
         self.init_ui()
         self.Centre()
@@ -130,21 +133,21 @@ class MainFrame(wx.Frame):
 
         # Linux 커널 로그
         self.kernel_controls = self.create_log_section(
-            panel, log_sizer, "Linux 커널 로그",
+            panel, log_sizer, "제어기 커널 로그",
             LogSourceType.LINUX_KERNEL,
             wx.Colour(173, 216, 230)
         )
 
-        # Linux 서버 앱 로그
+        # 제어기 로그
         self.server_controls = self.create_log_section(
-            panel, log_sizer, "Linux 서버 앱 로그",
+            panel, log_sizer, "제어기 로그",
             LogSourceType.LINUX_SERVER,
             wx.Colour(144, 238, 144)
         )
 
-        # Windows 클라이언트 로그
+        # 사용자 SW 로그
         self.client_controls = self.create_log_section(
-            panel, log_sizer, "Windows 클라이언트 로그",
+            panel, log_sizer, "사용자 SW 로그",
             LogSourceType.WINDOWS_CLIENT,
             wx.Colour(221, 160, 221)
         )
@@ -173,22 +176,27 @@ class MainFrame(wx.Frame):
         content_panel = wx.Panel(panel)
         content_sizer = wx.BoxSizer(wx.VERTICAL)
 
+        # 라디오 버튼을 위한 별도 패널 (각 로그 섹션의 라디오 버튼 그룹 독립성 보장)
+        radio_panel = wx.Panel(content_panel)
+
         # 1행: 수집 옵션
         option_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        option_sizer.Add(wx.StaticText(content_panel, label="수집 옵션:"),
+        option_sizer.Add(wx.StaticText(radio_panel, label="수집 옵션:"),
                         0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
-        rb_all = wx.RadioButton(content_panel, label="전체", style=wx.RB_GROUP)
+        rb_all = wx.RadioButton(radio_panel, label="전체", style=wx.RB_GROUP)
         rb_all.SetValue(True)
         option_sizer.Add(rb_all, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
-        rb_regex = wx.RadioButton(content_panel, label="정규식")
+        rb_regex = wx.RadioButton(radio_panel, label="정규식")
         option_sizer.Add(rb_regex, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 10)
 
-        rb_date = wx.RadioButton(content_panel, label="날짜")
+        rb_date = wx.RadioButton(radio_panel, label="날짜")
         option_sizer.Add(rb_date, 0, wx.ALIGN_CENTER_VERTICAL)
 
-        content_sizer.Add(option_sizer, 0, wx.ALL | wx.EXPAND, 5)
+        radio_panel.SetSizer(option_sizer)
+
+        content_sizer.Add(radio_panel, 0, wx.ALL | wx.EXPAND, 5)
 
         # 구분선
         content_sizer.Add(wx.StaticLine(content_panel, style=wx.LI_HORIZONTAL),
@@ -232,11 +240,7 @@ class MainFrame(wx.Frame):
 
         collect_btn = wx.Button(content_panel, label="수집")
         collect_btn.Bind(wx.EVT_BUTTON, lambda e: self.on_collect(log_type))
-        action_sizer.Add(collect_btn, 0, wx.RIGHT, 5)
-
-        delete_btn = wx.Button(content_panel, label="삭제")
-        delete_btn.Bind(wx.EVT_BUTTON, lambda e: self.on_delete(log_type))
-        action_sizer.Add(delete_btn, 0)
+        action_sizer.Add(collect_btn, 0)
 
         content_sizer.Add(action_sizer, 0, wx.ALL | wx.EXPAND, 5)
 
@@ -259,7 +263,6 @@ class MainFrame(wx.Frame):
             'filter_ctrl': filter_ctrl,
             'list_btn': list_btn,
             'collect_btn': collect_btn,
-            'delete_btn': delete_btn,
             'path_text': path_text
         }
 
@@ -267,7 +270,6 @@ class MainFrame(wx.Frame):
         if log_type != LogSourceType.WINDOWS_CLIENT:
             list_btn.Enable(False)
             collect_btn.Enable(False)
-            delete_btn.Enable(False)
 
         return controls
 
@@ -427,7 +429,6 @@ class MainFrame(wx.Frame):
         for controls in [self.kernel_controls, self.server_controls]:
             controls['list_btn'].Enable(enabled)
             controls['collect_btn'].Enable(enabled)
-            controls['delete_btn'].Enable(enabled)
 
         # 전체 수집 버튼도 활성화/비활성화
         self.collect_all_btn.Enable(enabled)
@@ -483,8 +484,11 @@ class MainFrame(wx.Frame):
                          wx.OK | wx.ICON_INFORMATION)
             return
 
-        # 파일 목록 다이얼로그
-        dlg = FileListDialog(self, files, log_type)
+        # 로그 소스 설정 가져오기
+        log_source_config = self.settings.get_log_source_config(log_type)
+
+        # 파일 목록 다이얼로그 (file_collector와 log_source_config 전달)
+        dlg = FileListDialog(self, files, log_type, self.file_collector, log_source_config)
         result = dlg.ShowModal()
 
         if result == wx.ID_OK:
@@ -495,6 +499,30 @@ class MainFrame(wx.Frame):
 
         dlg.Destroy()
 
+    def apply_ui_filter_to_config(self, log_type, config):
+        """UI에서 선택한 필터 옵션을 config에 적용"""
+        # 로그 타입에 맞는 컨트롤 가져오기
+        if log_type == LogSourceType.LINUX_KERNEL:
+            controls = self.kernel_controls
+        elif log_type == LogSourceType.LINUX_SERVER:
+            controls = self.server_controls
+        else:
+            controls = self.client_controls
+
+        # 필터 타입 확인
+        from core.models import FilterType
+        if controls['rb_all'].GetValue():
+            config.filter_type = FilterType.ALL
+            config.filter_value = None
+        elif controls['rb_regex'].GetValue():
+            config.filter_type = FilterType.REGEX
+            config.filter_value = controls['filter_ctrl'].GetValue().strip()
+        elif controls['rb_date'].GetValue():
+            config.filter_type = FilterType.DATE
+            config.filter_value = controls['filter_ctrl'].GetValue().strip()
+
+        logger.info(f"UI 필터 적용: {config.filter_type.value}, 값: {config.filter_value}")
+
     def on_collect(self, log_type):
         """로그 수집"""
         # 연결 확인
@@ -504,8 +532,11 @@ class MainFrame(wx.Frame):
                          wx.OK | wx.ICON_WARNING)
             return
 
-        # 백그라운드 스레드에서 수집
-        self.start_collection(log_type)
+        # UI에서 선택한 필터 옵션을 config에 적용
+        self.apply_ui_filter_to_config(log_type, config)
+
+        # 백그라운드 스레드에서 수집 (필터가 적용된 config 전달)
+        self.start_collection(log_type, config)
 
     def on_collect_all(self, event):
         """전체 로그 수집"""
@@ -559,6 +590,10 @@ class MainFrame(wx.Frame):
                         break
 
                     config = self.settings.get_log_source_config(log_type)
+
+                    # UI에서 선택한 필터 옵션을 config에 적용
+                    # (백그라운드 스레드에서 직접 호출)
+                    self.apply_ui_filter_to_config(log_type, config)
 
                     # 진행 상황 표시
                     wx.CallAfter(
@@ -621,7 +656,7 @@ class MainFrame(wx.Frame):
         self.progress_text.SetLabel("대기 중...")
         self.progress_bar.SetValue(0)
 
-    def start_collection(self, log_type):
+    def start_collection(self, log_type, config=None):
         """로그 수집 시작 (백그라운드)"""
         if self.downloading:
             wx.MessageBox("이미 다운로드가 진행 중입니다.", "알림",
@@ -633,15 +668,18 @@ class MainFrame(wx.Frame):
                 self.downloading = True
                 wx.CallAfter(self.stop_btn.Enable, True)
 
-                # 설정 로드
-                config = self.settings.get_log_source_config(log_type)
+                # 설정 로드 (config가 전달되지 않은 경우에만)
+                if config is None:
+                    config_to_use = self.settings.get_log_source_config(log_type)
+                else:
+                    config_to_use = config
                 save_path = self.settings.get_save_path()
 
-                wx.CallAfter(self.log_message, f"{config.get_display_name()} 수집 시작", "INFO")
+                wx.CallAfter(self.log_message, f"{config_to_use.get_display_name()} 수집 시작", "INFO")
 
                 # 파일 수집
                 result = self.file_collector.collect_logs(
-                    config,
+                    config_to_use,
                     save_path,
                     progress_callback=lambda p: wx.CallAfter(self.update_progress, p),
                     cancel_token=self.cancel_token
@@ -650,11 +688,11 @@ class MainFrame(wx.Frame):
                 # 결과 로그
                 if result.success:
                     wx.CallAfter(self.log_message,
-                               f"{config.get_display_name()} 수집 완료: {result.collected_files}개 파일",
+                               f"{config_to_use.get_display_name()} 수집 완료: {result.collected_files}개 파일",
                                "SUCCESS")
                 else:
                     wx.CallAfter(self.log_message,
-                               f"{config.get_display_name()} 수집 실패: {result.error_message}",
+                               f"{config_to_use.get_display_name()} 수집 실패: {result.error_message}",
                                "ERROR")
 
                 # 결과 표시
@@ -727,118 +765,6 @@ class MainFrame(wx.Frame):
         # 진행률 초기화
         self.progress_text.SetLabel("대기 중...")
         self.progress_bar.SetValue(0)
-
-    def on_delete(self, log_type):
-        """로그 삭제"""
-        # 연결 확인
-        config = self.settings.get_log_source_config(log_type)
-        if config.is_remote() and not self.ssh_connected:
-            wx.MessageBox("먼저 SSH에 연결해주세요.", "알림",
-                         wx.OK | wx.ICON_WARNING)
-            return
-
-        # 파일 목록 조회 먼저 수행
-        self.show_delete_file_list(log_type)
-
-    def show_delete_file_list(self, log_type):
-        """삭제할 파일 목록 조회 및 표시"""
-        # 진행 상태 표시
-        self.progress_text.SetLabel("파일 목록 조회 중...")
-        self.progress_bar.Pulse()
-
-        def list_worker():
-            try:
-                # 파일 목록 조회
-                files = self.file_collector.get_file_list(
-                    self.settings.get_log_source_config(log_type)
-                )
-
-                # 다이얼로그 표시 (메인 스레드)
-                wx.CallAfter(self.confirm_and_delete_files, log_type, files)
-
-            except Exception as e:
-                logger.error(f"파일 목록 조회 실패: {e}")
-                wx.CallAfter(wx.MessageBox,
-                            f"파일 목록 조회 실패:\n{str(e)}",
-                            "오류", wx.OK | wx.ICON_ERROR)
-
-            finally:
-                wx.CallAfter(self.progress_text.SetLabel, "대기 중...")
-                wx.CallAfter(self.progress_bar.SetValue, 0)
-
-        # 백그라운드 스레드 시작
-        thread = threading.Thread(target=list_worker, daemon=True)
-        thread.start()
-
-    def confirm_and_delete_files(self, log_type, files):
-        """삭제 확인 및 실행"""
-        if not files:
-            wx.MessageBox("삭제할 파일이 없습니다.", "알림",
-                         wx.OK | wx.ICON_INFORMATION)
-            return
-
-        config = self.settings.get_log_source_config(log_type)
-        count = len(files)
-        total_size = sum(f.size for f in files)
-
-        # 크기 포맷팅
-        size = total_size
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024.0:
-                size_str = f"{size:.2f} {unit}"
-                break
-            size /= 1024.0
-        else:
-            size_str = f"{size:.2f} TB"
-
-        # 확인 대화상자
-        msg = (f"{config.get_display_name()}\n\n"
-               f"총 {count}개 파일 ({size_str})을 삭제하시겠습니까?\n\n"
-               f"경로: {config.path}\n\n"
-               f"⚠️ 이 작업은 되돌릴 수 없습니다!")
-
-        result = wx.MessageBox(msg, "삭제 확인",
-                              wx.YES_NO | wx.NO_DEFAULT | wx.ICON_WARNING)
-
-        if result == wx.YES:
-            # 삭제 실행
-            self.start_delete_files(files)
-
-    def start_delete_files(self, files):
-        """파일 삭제 시작 (백그라운드)"""
-        def delete_worker():
-            try:
-                self.progress_text.SetLabel("파일 삭제 중...")
-                self.progress_bar.SetValue(0)
-
-                # 파일 삭제
-                success_count, fail_count = self.file_collector.delete_files(files)
-
-                # 결과 표시
-                wx.CallAfter(self.show_delete_result, success_count, fail_count, len(files))
-
-            except Exception as e:
-                logger.error(f"파일 삭제 중 오류: {e}")
-                wx.CallAfter(wx.MessageBox, f"파일 삭제 실패:\n{str(e)}",
-                           "오류", wx.OK | wx.ICON_ERROR)
-            finally:
-                wx.CallAfter(self.progress_text.SetLabel, "대기 중...")
-                wx.CallAfter(self.progress_bar.SetValue, 0)
-
-        thread = threading.Thread(target=delete_worker, daemon=True)
-        thread.start()
-
-    def show_delete_result(self, success_count, fail_count, total_count):
-        """삭제 결과 표시"""
-        if fail_count == 0:
-            message = f"총 {total_count}개 파일 삭제 완료!"
-            wx.MessageBox(message, "삭제 완료", wx.OK | wx.ICON_INFORMATION)
-        else:
-            message = (f"삭제 결과:\n\n"
-                      f"성공: {success_count}개\n"
-                      f"실패: {fail_count}개\n"
-                      f"전체: {total_count}개")
-            wx.MessageBox(message, "삭제 완료", wx.OK | wx.ICON_WARNING)
 
     def on_stop_download(self, event):
         """다운로드 중지"""
@@ -918,6 +844,17 @@ class MainFrame(wx.Frame):
 
         self.log_window.Show()
         self.log_window.Raise()
+
+    def _ui_log_callback(self, message: str, level: str):
+        """
+        Python logging 시스템에서 호출되는 콜백
+
+        Args:
+            message: 로그 메시지 (이미 포맷팅됨)
+            level: 로그 레벨 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        """
+        # 로그 메시지를 UI에 출력
+        self.log_message(message, level)
 
     def log_message(self, message, level="INFO"):
         """

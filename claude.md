@@ -54,14 +54,15 @@
 <구현 완료 현황>
 ## 핵심 인프라
 - ✅ 설정 관리 시스템 (SettingsManager - Singleton 패턴)
-  - JSON 기반 설정 저장/로드 (%APPDATA%/LogCollector/config.json)
+  - JSON 기반 설정 저장/로드 ({프로그램폴더}/config/config.json)
   - SSH 설정, 로그 소스 설정, 저장 경로 관리
 - ✅ SSH/SFTP 연결 관리자 (SSHManager)
   - Keep-alive 데몬 스레드로 연결 유지
   - 연결 타임아웃 및 재연결 처리
 - ✅ 로깅 시스템
-  - 일별 로그 파일 (%APPDATA%/LogCollector/logs/)
+  - 일별 로그 파일 ({프로그램폴더}/logs/)
   - 로테이션 기능 (최대 30일, 10MB)
+  - UI 로그 핸들러 통합 (모든 Python 로그가 UI에 실시간 출력)
 - ✅ 데이터 모델
   - FileInfo, LogSourceConfig, SSHConfig, CollectionResult, ProgressInfo, CancelToken
 
@@ -74,22 +75,35 @@
   - 파일 목록 조회, 복사, 삭제
 - ✅ 원격 파일 서비스 (RemoteFileService)
   - SFTP를 통한 파일 목록 조회, 다운로드, 삭제
+  - 원격 서버에서 압축 후 다운로드 (tar.gz, gz)
+  - 권한 오류 파일 처리 및 로깅
 - ✅ 압축 처리 (CompressionHandler)
-  - ZIP 압축 (타임스탬프 기반 파일명)
+  - ZIP, tar.gz, gz 압축 (타임스탬프 기반 파일명)
+  - 로그 타입별 압축 형식 자동 선택
+  - 압축 파일명: controller_kernel_log_YYYY-MM-DD HH.MM.SS.gz
 - ✅ 파일 수집 조정자 (FileCollector)
   - 전체 워크플로우 관리
   - 진행률 콜백 지원
   - 취소 토큰 처리
+  - 원격 압축 통합 (압축 → 다운로드 → 삭제)
 
 ## UI 구성 요소
 - ✅ 메인 프레임 (MainFrame)
-  - 3개 로그 소스별 제어 영역 (Linux 커널, Linux 서버, Windows 클라이언트)
-  - 각 영역: 목록/전체/삭제 버튼
+  - 크기: 1000x800 (고정)
+  - 3개 로그 소스별 제어 영역 (제어기 커널, 제어기, 사용자 SW)
+  - 3행 레이아웃: 수집옵션 → 필터조건 → 실행버튼
+  - 각 영역: 목록/수집/삭제 버튼
+  - 전체 수집 버튼 (3가지 로그 모두 수집)
   - 진행률 표시 (프로그레스 바 + 텍스트)
-  - 저장 경로 설정
   - 중지 버튼 (다운로드 중 활성화)
   - 상태 표시줄 (SSH 연결 상태, IP 주소)
   - 백그라운드 스레드 처리로 UI 응답성 유지
+- ✅ 로그 윈도우 (LogWindow)
+  - "보기 > 로그 메시지" 메뉴로 접근
+  - 읽기 전용, 복사 가능
+  - 로그 버퍼링 (최대 1000개)
+  - 색상별 로그 레벨 표시
+  - 지우기, 저장 기능
 - ✅ 설정 다이얼로그 (SettingsDialog)
   - SSH 설정 (호스트, 포트, 계정, 타임아웃, keep-alive)
   - 로그 소스별 경로 설정
@@ -138,17 +152,40 @@
 - **스레드 안전성**: wx.CallAfter()를 통한 UI 업데이트
 
 ## 설정 및 로그
-- **설정 파일**: %APPDATA%\LogCollector\config.json
-- **로그 파일**: %APPDATA%\LogCollector\logs\log_collector_YYYYMMDD.log
-- **기본 저장 경로**: %USERPROFILE%\Downloads\LogCollector
+- **설정 파일**: {프로그램폴더}\config\config.json
+- **로그 파일**: {프로그램폴더}\logs\log_collector_YYYYMMDD.log
+- **기본 저장 경로**: C:\Logs\collected (설정에서 변경 가능)
 
 ## 테스트
 - 인프라 테스트: test_infrastructure.py
 - SSH 테스트: test_ssh_manager.py, test_ssh_basic.py
 - 통합 테스트 계획: TEST_PLAN.md (12개 시나리오, 체크리스트 포함)
 
+## 의존성 패키지
+- **wxpython** (4.2.3) - GUI 프레임워크
+- **paramiko** (4.0.0) - SSH/SFTP 연결
+- 간접 의존성: numpy, invoke, bcrypt, cryptography, pynacl, cffi, pycparser
+
+## modification.md 구현 현황
+✅ 모든 요구사항 (11개 + 추가 4개) 완료
+- 메인윈도우 크기 고정 (1000x800)
+- 명칭 변경 (제어기 커널/제어기/사용자 SW)
+- 저장 경로 UI 제거
+- 실시간 로그 윈도우
+- 날짜 필터 힌트
+- 3행 레이아웃
+- 압축 옵션 제거
+- 전체 수집 버튼
+- 원격 파일 압축
+- 압축 파일명 형식
+- 도움말 메뉴 삭제
+- 로그/설정 파일 위치 변경
+- Python 로그 UI 출력
+- 압축 실패 파일 로깅
+- 의존성 최적화
+
 ## 다음 단계
-1. 사용자 요청 기능 추가/수정
+1. ✅ modification.md 요구사항 모두 완료
 2. 통합 테스트 수행
 3. PyInstaller로 .exe 빌드
 4. 배포 파일 테스트

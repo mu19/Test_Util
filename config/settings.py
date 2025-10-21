@@ -37,11 +37,16 @@ class SettingsManager:
 
     def _initialize(self):
         """설정 초기화"""
-        # 설정 파일 경로 설정: %APPDATA%/LogCollector/config.json
-        config_dir = os.path.join(
-            os.getenv('APPDATA', '.'),
-            'LogCollector'
-        )
+        # 설정 파일 경로 설정: 프로그램 실행 폴더/config/config.json
+        import sys
+        if getattr(sys, 'frozen', False):
+            # PyInstaller로 패키징된 경우
+            app_dir = os.path.dirname(sys.executable)
+        else:
+            # 개발 환경
+            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        config_dir = os.path.join(app_dir, 'config')
         Path(config_dir).mkdir(parents=True, exist_ok=True)
         self._config_file = os.path.join(config_dir, 'config.json')
 
