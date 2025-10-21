@@ -42,9 +42,9 @@ class FileListDialog(wx.Dialog):
     def get_title(self, log_type: LogSourceType) -> str:
         """타입별 타이틀 생성"""
         titles = {
-            LogSourceType.LINUX_KERNEL: "커널 로그 파일 목록",
-            LogSourceType.LINUX_SERVER: "서버 로그 파일 목록",
-            LogSourceType.WINDOWS_CLIENT: "클라이언트 로그 파일 목록"
+            LogSourceType.LINUX_KERNEL: "제어기 커널 로그 파일 목록",
+            LogSourceType.LINUX_SERVER: "제어기 로그 파일 목록",
+            LogSourceType.WINDOWS_CLIENT: "사용자 SW 로그 파일 목록"
         }
         return titles.get(log_type, "파일 목록")
 

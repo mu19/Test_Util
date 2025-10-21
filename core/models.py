@@ -91,9 +91,9 @@ class LogSourceConfig:
     def get_display_name(self) -> str:
         """표시용 이름 반환"""
         names = {
-            LogSourceType.LINUX_KERNEL: "Linux 커널 로그",
-            LogSourceType.LINUX_SERVER: "Linux 서버 앱 로그",
-            LogSourceType.WINDOWS_CLIENT: "Windows 클라이언트 로그"
+            LogSourceType.LINUX_KERNEL: "제어기 커널 로그",
+            LogSourceType.LINUX_SERVER: "제어기 로그",
+            LogSourceType.WINDOWS_CLIENT: "사용자 SW 로그"
         }
         return names.get(self.source_type, "Unknown")
 

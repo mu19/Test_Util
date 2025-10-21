@@ -280,12 +280,12 @@ class CompressionHandler:
             return 0.0
 
     @staticmethod
-    def create_archive_name(base_name: str, timestamp: bool = True) -> str:
+    def create_archive_name(log_source_type: str, timestamp: bool = True) -> str:
         """
         압축 파일 이름 생성
 
         Args:
-            base_name: 기본 이름
+            log_source_type: 로그 소스 타입 ("linux_kernel", "linux_server", "windows_client")
             timestamp: 타임스탬프 포함 여부
 
         Returns:
@@ -293,8 +293,17 @@ class CompressionHandler:
         """
         from datetime import datetime
 
+        # 로그 타입별 파일명 매핑
+        name_map = {
+            "linux_kernel": ("controller_kernel_log", ".gz"),
+            "linux_server": ("controller_log", ".tar.gz"),
+            "windows_client": ("user_app_log", ".zip")
+        }
+
+        base_name, extension = name_map.get(log_source_type, ("log", ".zip"))
+
         if timestamp:
-            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-            return f"{base_name}_{ts}.zip"
+            ts = datetime.now().strftime('%Y-%m-%d %H.%M.%S')
+            return f"{base_name}_{{{ts}}}{extension}"
         else:
-            return f"{base_name}.zip"
+            return f"{base_name}{extension}"

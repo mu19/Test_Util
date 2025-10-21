@@ -50,3 +50,105 @@
 
 <기타>
 1. 향후 추가될 기능이 있으므로 확장성을 고려하여 설계
+
+<구현 완료 현황>
+## 핵심 인프라
+- ✅ 설정 관리 시스템 (SettingsManager - Singleton 패턴)
+  - JSON 기반 설정 저장/로드 (%APPDATA%/LogCollector/config.json)
+  - SSH 설정, 로그 소스 설정, 저장 경로 관리
+- ✅ SSH/SFTP 연결 관리자 (SSHManager)
+  - Keep-alive 데몬 스레드로 연결 유지
+  - 연결 타임아웃 및 재연결 처리
+- ✅ 로깅 시스템
+  - 일별 로그 파일 (%APPDATA%/LogCollector/logs/)
+  - 로테이션 기능 (최대 30일, 10MB)
+- ✅ 데이터 모델
+  - FileInfo, LogSourceConfig, SSHConfig, CollectionResult, ProgressInfo, CancelToken
+
+## 파일 처리 엔진
+- ✅ 파일 필터링 (FilterEngine)
+  - 전체 필터
+  - 정규식 필터
+  - 날짜 기반 필터
+- ✅ 로컬 파일 서비스 (LocalFileService)
+  - 파일 목록 조회, 복사, 삭제
+- ✅ 원격 파일 서비스 (RemoteFileService)
+  - SFTP를 통한 파일 목록 조회, 다운로드, 삭제
+- ✅ 압축 처리 (CompressionHandler)
+  - ZIP 압축 (타임스탬프 기반 파일명)
+- ✅ 파일 수집 조정자 (FileCollector)
+  - 전체 워크플로우 관리
+  - 진행률 콜백 지원
+  - 취소 토큰 처리
+
+## UI 구성 요소
+- ✅ 메인 프레임 (MainFrame)
+  - 3개 로그 소스별 제어 영역 (Linux 커널, Linux 서버, Windows 클라이언트)
+  - 각 영역: 목록/전체/삭제 버튼
+  - 진행률 표시 (프로그레스 바 + 텍스트)
+  - 저장 경로 설정
+  - 중지 버튼 (다운로드 중 활성화)
+  - 상태 표시줄 (SSH 연결 상태, IP 주소)
+  - 백그라운드 스레드 처리로 UI 응답성 유지
+- ✅ 설정 다이얼로그 (SettingsDialog)
+  - SSH 설정 (호스트, 포트, 계정, 타임아웃, keep-alive)
+  - 로그 소스별 경로 설정
+  - 저장 경로 설정
+  - 압축/삭제 기본값 설정
+  - 설정 유효성 검증
+  - 저장 확인 다이얼로그
+- ✅ 파일 목록 다이얼로그 (FileListDialog)
+  - 파일 선택/해제 (더블클릭, 엔터)
+  - 전체 선택/해제/토글 버튼
+  - 파일 정보 표시 (이름, 크기, 수정 시간, 경로)
+  - 선택 파일 수집 확인 (파일 개수, 총 크기)
+
+## 주요 기능
+- ✅ SSH 연결/해제
+  - 백그라운드 스레드 처리 (UI 멈춤 방지)
+  - 연결 중 상태 표시 (⏳ 연결 중...)
+  - Keep-alive로 장시간 연결 유지
+- ✅ 파일 목록 조회
+  - 원격 (SSH를 통한 SFTP)
+  - 로컬 (Windows 파일 시스템)
+- ✅ 전체 파일 수집
+  - 필터 적용 (전체/정규식/날짜)
+  - 진행률 실시간 표시
+  - 압축 옵션
+  - 전송 후 삭제 옵션
+- ✅ 선택 파일 수집
+  - 파일 목록에서 선택한 파일만 수집
+  - 확인 다이얼로그 (파일 개수, 총 크기)
+- ✅ 파일 삭제
+  - 파일 목록 조회 후 삭제
+  - 확인 다이얼로그 (경고 메시지 포함)
+  - 삭제 결과 표시 (성공/실패 개수)
+- ✅ 취소 기능
+  - CancelToken을 통한 작업 취소
+  - 중지 버튼 (다운로드 중 활성화)
+  - 현재 파일까지 수집 후 중단
+
+## 아키텍처
+- **Layer Architecture**: Presentation (UI) → Application (Services) → Domain (Core) → Infrastructure (Utils)
+- **디자인 패턴**:
+  - Singleton (SettingsManager)
+  - Context Manager (SSHManager)
+  - Observer (Progress Callback)
+  - Factory (Filter Engine)
+- **스레드 안전성**: wx.CallAfter()를 통한 UI 업데이트
+
+## 설정 및 로그
+- **설정 파일**: %APPDATA%\LogCollector\config.json
+- **로그 파일**: %APPDATA%\LogCollector\logs\log_collector_YYYYMMDD.log
+- **기본 저장 경로**: %USERPROFILE%\Downloads\LogCollector
+
+## 테스트
+- 인프라 테스트: test_infrastructure.py
+- SSH 테스트: test_ssh_manager.py, test_ssh_basic.py
+- 통합 테스트 계획: TEST_PLAN.md (12개 시나리오, 체크리스트 포함)
+
+## 다음 단계
+1. 사용자 요청 기능 추가/수정
+2. 통합 테스트 수행
+3. PyInstaller로 .exe 빌드
+4. 배포 파일 테스트
