@@ -125,7 +125,14 @@ class FileCollector:
             # 저장 디렉토리 생성
             self.local_service.create_directory(save_path)
 
-            # 파일 수집
+            # 원격 파일의 경우 먼저 압축한 후 다운로드
+            if config.is_remote() and len(files) > 0:
+                result = self._collect_remote_with_compression(
+                    files, config, save_path, progress_callback, cancel_token, result
+                )
+                return result
+
+            # 로컬 파일 수집 (기존 로직)
             collected_files = []
 
             for idx, file_info in enumerate(files, 1):
@@ -150,11 +157,13 @@ class FileCollector:
                     local_path = os.path.join(save_path, file_info.name)
 
                     if config.is_remote():
+                        # 원격 파일 다운로드 (개별 파일)
                         self.remote_service.download_file(
                             file_info.get_full_path(),
                             local_path
                         )
                     else:
+                        # 로컬 파일 복사
                         self.local_service.copy_file(
                             file_info.get_full_path(),
                             local_path
@@ -367,3 +376,152 @@ class FileCollector:
 
         logger.info(f"파일 삭제 완료: 성공 {success_count}개, 실패 {fail_count}개")
         return success_count, fail_count
+
+    def _collect_remote_with_compression(self,
+                                        files: List[FileInfo],
+                                        config: LogSourceConfig,
+                                        save_path: str,
+                                        progress_callback: Optional[Callable[[ProgressInfo], None]],
+                                        cancel_token: Optional[CancelToken],
+                                        result: CollectionResult) -> CollectionResult:
+        """
+        원격 파일 수집 (원격 압축 → 다운로드 → 원격 삭제)
+
+        Args:
+            files: 수집할 파일 목록
+            config: 로그 소스 설정
+            save_path: 로컬 저장 경로
+            progress_callback: 진행률 콜백
+            cancel_token: 취소 토큰
+            result: 수집 결과 (진행중)
+
+        Returns:
+            최종 수집 결과
+        """
+        from datetime import datetime
+
+        try:
+            # 진행률 업데이트
+            if progress_callback:
+                progress = ProgressInfo(
+                    current_file="원격 서버에서 파일 압축 중...",
+                    current_index=0,
+                    total_files=result.total_files,
+                    total_progress=10
+                )
+                progress_callback(progress)
+
+            # 압축 파일명 생성
+            archive_name = self.compression_handler.create_archive_name(
+                config.source_type.value,
+                timestamp=True
+            )
+
+            # 원격 압축 파일 경로 (원격 서버의 /tmp 디렉토리 사용)
+            remote_archive_path = f"/tmp/{archive_name}"
+
+            # 원격에서 파일 압축
+            logger.info(f"원격 서버에서 파일 압축 시작: {len(files)}개 파일")
+
+            # 파일 경로 리스트 생성
+            file_paths = [f.get_full_path() for f in files]
+
+            # 압축 타입 결정 (Linux 커널: gz, 서버 앱: tar.gz)
+            from core.models import LogSourceType
+            if config.source_type == LogSourceType.LINUX_KERNEL:
+                archive_type = "tar.gz"  # 커널 로그도 여러 파일일 수 있으므로 tar.gz 사용
+            else:
+                archive_type = "tar.gz"
+
+            # 원격 압축 실행
+            compress_success = self.remote_service.compress_files_remote(
+                file_paths,
+                remote_archive_path,
+                archive_type
+            )
+
+            if not compress_success:
+                raise Exception("원격 파일 압축 실패")
+
+            logger.info(f"원격 압축 완료: {remote_archive_path}")
+
+            # 진행률 업데이트
+            if progress_callback:
+                progress = ProgressInfo(
+                    current_file="압축 파일 다운로드 중...",
+                    current_index=0,
+                    total_files=result.total_files,
+                    total_progress=50
+                )
+                progress_callback(progress)
+
+            # 압축 파일 다운로드
+            local_archive_path = os.path.join(save_path, archive_name)
+            logger.info(f"압축 파일 다운로드: {remote_archive_path} -> {local_archive_path}")
+
+            self.remote_service.download_file(
+                remote_archive_path,
+                local_archive_path
+            )
+
+            logger.info("압축 파일 다운로드 완료")
+
+            # 진행률 업데이트
+            if progress_callback:
+                progress = ProgressInfo(
+                    current_file="원격 압축 파일 삭제 중...",
+                    current_index=0,
+                    total_files=result.total_files,
+                    total_progress=80
+                )
+                progress_callback(progress)
+
+            # 원격 압축 파일 삭제
+            logger.info("원격 압축 파일 삭제 시작")
+            try:
+                self.remote_service.delete_file(remote_archive_path)
+                logger.info("원격 압축 파일 삭제 완료")
+            except Exception as e:
+                logger.warning(f"원격 압축 파일 삭제 실패: {e}")
+
+            # 원본 파일 삭제 (옵션)
+            if config.delete_after:
+                logger.info("원격 원본 파일 삭제 시작...")
+
+                delete_success = 0
+                delete_fail = 0
+
+                for file_info in files:
+                    try:
+                        self.remote_service.delete_file(file_info.get_full_path())
+                        delete_success += 1
+                    except Exception as e:
+                        logger.warning(f"원본 파일 삭제 실패: {file_info.name} - {e}")
+                        delete_fail += 1
+
+                logger.info(f"원본 파일 삭제 완료: 성공 {delete_success}개, 실패 {delete_fail}개")
+
+            # 결과 업데이트
+            result.collected_files = len(files)
+            result.file_list = [local_archive_path]
+            result.success = True
+
+            # 최종 진행률
+            if progress_callback:
+                progress = ProgressInfo(
+                    current_file="",
+                    current_index=result.total_files,
+                    total_files=result.total_files,
+                    total_progress=100,
+                    is_complete=True
+                )
+                progress_callback(progress)
+
+            logger.info(f"원격 파일 수집 완료: {result.get_summary()}")
+            return result
+
+        except Exception as e:
+            logger.error(f"원격 파일 수집 중 오류: {e}")
+            result.error_message = str(e)
+            result.success = False
+            return result
