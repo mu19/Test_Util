@@ -343,18 +343,34 @@ class RemoteFileService:
 
         try:
             if archive_type == "tar.gz":
-                # tar.gz 압축
-                # 모든 파일이 같은 디렉토리에 있다고 가정
+                # tar.gz 압축 (디렉토리 구조 유지)
                 if file_list:
                     import os
-                    # 첫 번째 파일의 디렉토리 경로 추출
-                    base_dir = os.path.dirname(file_list[0])
-                    # 상대 경로로 파일명만 추출
-                    relative_files = [os.path.basename(f) for f in file_list]
+                    import posixpath
+
+                    # 모든 파일의 공통 베이스 경로 찾기
+                    if len(file_list) == 1:
+                        base_dir = os.path.dirname(file_list[0])
+                    else:
+                        # 공통 경로 찾기
+                        base_dir = posixpath.commonpath(file_list)
+                        # 파일이 포함된 디렉토리가 공통 경로여야 함
+                        if not self.ssh_manager.is_directory(base_dir):
+                            base_dir = posixpath.dirname(base_dir)
+
+                    # 베이스 디렉토리 기준 상대 경로 생성
+                    relative_files = []
+                    for file_path in file_list:
+                        rel_path = posixpath.relpath(file_path, base_dir)
+                        relative_files.append(rel_path)
+
                     files_str = " ".join([f'"{f}"' for f in relative_files])
 
                     # 디렉토리로 이동 후 상대 경로로 압축 (stderr를 캡처하기 위해 2>&1 사용)
                     command = f'cd "{base_dir}" && tar --ignore-failed-read -czf "{archive_path}" {files_str} 2>&1'
+
+                    logger.debug(f"압축 베이스 디렉토리: {base_dir}")
+                    logger.debug(f"압축 대상 파일 수: {len(relative_files)}개")
                 else:
                     logger.warning("압축할 파일 목록이 비어있습니다.")
                     return False

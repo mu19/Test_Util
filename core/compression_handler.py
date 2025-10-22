@@ -137,6 +137,71 @@ class CompressionHandler:
             raise
 
     @staticmethod
+    def compress_files_with_structure(source_paths: List[str],
+                                      arcnames: List[str],
+                                      archive_path: str,
+                                      compression_level: int = 6) -> bool:
+        """
+        여러 파일을 하나의 압축 파일로 압축 (디렉토리 구조 유지)
+
+        Args:
+            source_paths: 압축할 파일 경로 리스트
+            arcnames: 압축 파일 내 경로 리스트 (source_paths와 동일한 길이)
+            archive_path: 압축 파일 저장 경로 (.zip)
+            compression_level: 압축 레벨 (0-9, 기본 6)
+
+        Returns:
+            압축 성공 여부
+        """
+        logger.info(f"파일 일괄 압축 (구조 유지): {len(source_paths)}개 -> {archive_path}")
+
+        if not source_paths:
+            logger.warning("압축할 파일이 없습니다.")
+            return False
+
+        if len(source_paths) != len(arcnames):
+            raise ValueError("source_paths와 arcnames의 길이가 일치하지 않습니다.")
+
+        # 압축 파일 디렉토리 생성
+        archive = Path(archive_path)
+        archive.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            total_original_size = 0
+            compressed_count = 0
+
+            with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED,
+                               compresslevel=compression_level) as zipf:
+                for source_path, arcname in zip(source_paths, arcnames):
+                    source = Path(source_path)
+
+                    if not source.exists():
+                        logger.warning(f"파일을 찾을 수 없습니다: {source_path}")
+                        continue
+
+                    if not source.is_file():
+                        logger.warning(f"파일이 아닙니다: {source_path}")
+                        continue
+
+                    # arcname을 사용하여 압축 파일 내 경로 유지
+                    zipf.write(source_path, arcname)
+                    total_original_size += source.stat().st_size
+                    compressed_count += 1
+
+            # 압축 결과
+            compressed_size = archive.stat().st_size
+            ratio = (1 - compressed_size / total_original_size) * 100 if total_original_size > 0 else 0
+
+            logger.info(f"파일 일괄 압축 완료: {compressed_count}개 파일")
+            logger.info(f"압축률: {ratio:.1f}% (원본: {total_original_size}, 압축: {compressed_size})")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"파일 일괄 압축 실패: {e}")
+            raise
+
+    @staticmethod
     def decompress_file(archive_path: str,
                        extract_path: str) -> List[str]:
         """

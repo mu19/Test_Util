@@ -20,12 +20,13 @@ class LocalFileService:
     """로컬 파일 시스템 서비스"""
 
     @staticmethod
-    def list_files(local_path: str) -> List[FileInfo]:
+    def list_files(local_path: str, recursive: bool = True) -> List[FileInfo]:
         """
-        로컬 디렉토리의 파일 목록 조회
+        로컬 디렉토리의 파일 목록 조회 (재귀적)
 
         Args:
             local_path: 로컬 디렉토리 경로
+            recursive: 하위 디렉토리 포함 여부 (기본값: True)
 
         Returns:
             파일 정보 리스트
@@ -34,7 +35,7 @@ class LocalFileService:
             FileNotFoundError: 경로가 존재하지 않음
             NotADirectoryError: 경로가 디렉토리가 아님
         """
-        logger.info(f"파일 목록 조회: {local_path}")
+        logger.info(f"파일 목록 조회: {local_path} (재귀: {recursive})")
 
         # 경로 확인
         path_obj = Path(local_path)
@@ -47,22 +48,55 @@ class LocalFileService:
         # 파일 목록 조회
         file_list = []
         try:
-            for item in path_obj.iterdir():
-                # 디렉토리는 제외
-                if item.is_dir():
-                    continue
+            if recursive:
+                # 재귀적으로 하위 디렉토리 포함
+                for item in path_obj.rglob('*'):
+                    # 디렉토리는 제외, 파일만 포함
+                    if item.is_dir():
+                        continue
 
-                # 파일 정보 가져오기
-                stat = item.stat()
+                    try:
+                        # 파일 정보 가져오기
+                        stat = item.stat()
 
-                file_info = FileInfo(
-                    name=item.name,
-                    path=str(path_obj),
-                    size=stat.st_size,
-                    modified_time=datetime.fromtimestamp(stat.st_mtime),
-                    is_remote=False
-                )
-                file_list.append(file_info)
+                        # 상대 경로 계산 (루트 경로 기준)
+                        relative_path = item.relative_to(path_obj)
+
+                        file_info = FileInfo(
+                            name=str(relative_path),  # 하위 폴더 포함한 상대 경로
+                            path=str(path_obj),
+                            size=stat.st_size,
+                            modified_time=datetime.fromtimestamp(stat.st_mtime),
+                            is_remote=False
+                        )
+                        file_list.append(file_info)
+
+                    except PermissionError:
+                        # 권한 없는 파일은 경고 후 스킵
+                        logger.warning(f"권한 없음 (스킵): {item}")
+                        continue
+                    except Exception as e:
+                        # 기타 오류도 경고 후 스킵
+                        logger.warning(f"파일 정보 조회 실패 (스킵): {item} - {e}")
+                        continue
+            else:
+                # 현재 디렉토리만 조회 (하위 디렉토리 제외)
+                for item in path_obj.iterdir():
+                    # 디렉토리는 제외
+                    if item.is_dir():
+                        continue
+
+                    # 파일 정보 가져오기
+                    stat = item.stat()
+
+                    file_info = FileInfo(
+                        name=item.name,
+                        path=str(path_obj),
+                        size=stat.st_size,
+                        modified_time=datetime.fromtimestamp(stat.st_mtime),
+                        is_remote=False
+                    )
+                    file_list.append(file_info)
 
             logger.info(f"파일 목록 조회 완료: {len(file_list)}개")
             return file_list

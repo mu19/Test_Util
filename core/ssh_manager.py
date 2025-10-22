@@ -202,12 +202,13 @@ class SSHManager:
 
         logger.info("Keep-alive 워커 종료")
 
-    def list_files(self, remote_path: str) -> List[FileInfo]:
+    def list_files(self, remote_path: str, recursive: bool = True) -> List[FileInfo]:
         """
-        원격 디렉토리의 파일 목록 조회
+        원격 디렉토리의 파일 목록 조회 (재귀적)
 
         Args:
             remote_path: 원격 디렉토리 경로
+            recursive: 하위 디렉토리 포함 여부 (기본값: True)
 
         Returns:
             파일 정보 리스트
@@ -220,7 +221,7 @@ class SSHManager:
             raise SSHConnectionError("SSH에 연결되지 않았습니다.")
 
         try:
-            logger.info(f"파일 목록 조회: {remote_path}")
+            logger.info(f"파일 목록 조회: {remote_path} (재귀: {recursive})")
 
             # 경로가 디렉토리인지 확인
             try:
@@ -233,21 +234,27 @@ class SSHManager:
 
             # 파일 목록 조회
             file_list = []
-            for attr in self._sftp_client.listdir_attr(remote_path):
-                # 디렉토리는 제외
-                import stat as stat_module
-                if stat_module.S_ISDIR(attr.st_mode):
-                    continue
 
-                # FileInfo 생성
-                file_info = FileInfo(
-                    name=attr.filename,
-                    path=remote_path,
-                    size=attr.st_size,
-                    modified_time=datetime.fromtimestamp(attr.st_mtime),
-                    is_remote=True
-                )
-                file_list.append(file_info)
+            if recursive:
+                # 재귀적으로 하위 디렉토리 포함
+                self._list_files_recursive(remote_path, remote_path, file_list)
+            else:
+                # 현재 디렉토리만 조회
+                for attr in self._sftp_client.listdir_attr(remote_path):
+                    # 디렉토리는 제외
+                    import stat as stat_module
+                    if stat_module.S_ISDIR(attr.st_mode):
+                        continue
+
+                    # FileInfo 생성
+                    file_info = FileInfo(
+                        name=attr.filename,
+                        path=remote_path,
+                        size=attr.st_size,
+                        modified_time=datetime.fromtimestamp(attr.st_mtime),
+                        is_remote=True
+                    )
+                    file_list.append(file_info)
 
             logger.info(f"파일 목록 조회 완료: {len(file_list)}개")
             return file_list
@@ -255,6 +262,56 @@ class SSHManager:
         except Exception as e:
             logger.error(f"파일 목록 조회 실패: {e}")
             raise
+
+    def _list_files_recursive(self, current_path: str, base_path: str, file_list: List[FileInfo]):
+        """
+        재귀적으로 파일 목록 조회 (내부 메서드)
+
+        Args:
+            current_path: 현재 탐색 중인 경로
+            base_path: 기본 경로 (상대 경로 계산용)
+            file_list: 파일 목록을 추가할 리스트
+        """
+        import stat as stat_module
+        import posixpath  # 원격 경로는 항상 POSIX 형식
+
+        try:
+            for attr in self._sftp_client.listdir_attr(current_path):
+                full_path = posixpath.join(current_path, attr.filename)
+
+                if stat_module.S_ISDIR(attr.st_mode):
+                    # 디렉토리면 재귀 호출
+                    try:
+                        self._list_files_recursive(full_path, base_path, file_list)
+                    except PermissionError:
+                        logger.warning(f"권한 없음 (스킵): {full_path}")
+                    except Exception as e:
+                        logger.warning(f"디렉토리 접근 실패 (스킵): {full_path} - {e}")
+                else:
+                    # 파일이면 리스트에 추가
+                    try:
+                        # 상대 경로 계산
+                        if current_path == base_path:
+                            relative_path = attr.filename
+                        else:
+                            # base_path를 기준으로 상대 경로 계산
+                            relative_path = posixpath.relpath(full_path, base_path)
+
+                        file_info = FileInfo(
+                            name=relative_path,  # 하위 폴더 포함한 상대 경로
+                            path=base_path,
+                            size=attr.st_size,
+                            modified_time=datetime.fromtimestamp(attr.st_mtime),
+                            is_remote=True
+                        )
+                        file_list.append(file_info)
+                    except Exception as e:
+                        logger.warning(f"파일 정보 조회 실패 (스킵): {full_path} - {e}")
+
+        except PermissionError:
+            logger.warning(f"권한 없음 (스킵): {current_path}")
+        except Exception as e:
+            logger.warning(f"디렉토리 목록 조회 실패 (스킵): {current_path} - {e}")
 
     def download_file(self,
                      remote_path: str,
@@ -374,6 +431,33 @@ class SSHManager:
         except Exception as e:
             logger.error(f"파일 정보 조회 실패: {e}")
             raise
+
+    def is_directory(self, remote_path: str) -> bool:
+        """
+        원격 경로가 디렉토리인지 확인
+
+        Args:
+            remote_path: 원격 경로
+
+        Returns:
+            디렉토리 여부
+
+        Raises:
+            SSHConnectionError: 연결되지 않은 경우
+        """
+        if not self.is_connected():
+            raise SSHConnectionError("SSH에 연결되지 않았습니다.")
+
+        try:
+            stat = self._sftp_client.stat(remote_path)
+            import stat as stat_module
+            return stat_module.S_ISDIR(stat.st_mode)
+
+        except FileNotFoundError:
+            return False
+        except Exception as e:
+            logger.error(f"디렉토리 확인 실패: {e}")
+            return False
 
     def execute_command(self, command: str, timeout: int = 30) -> tuple[str, str, int]:
         """

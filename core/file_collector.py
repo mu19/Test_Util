@@ -156,6 +156,11 @@ class FileCollector:
                     # 파일 수집 (다운로드 또는 복사)
                     local_path = os.path.join(save_path, file_info.name)
 
+                    # 하위 디렉토리 생성 (file_info.name에 경로가 포함된 경우)
+                    local_dir = os.path.dirname(local_path)
+                    if local_dir and not os.path.exists(local_dir):
+                        os.makedirs(local_dir, exist_ok=True)
+
                     if config.is_remote():
                         # 원격 파일 다운로드 (개별 파일)
                         self.remote_service.download_file(
@@ -189,18 +194,37 @@ class FileCollector:
                 archive_path = os.path.join(save_path, archive_name)
 
                 try:
-                    file_paths = [local_path for _, local_path in collected_files]
-                    self.compression_handler.compress_files(
+                    # 파일 경로와 압축 파일 내 경로(arcname) 매핑
+                    file_paths = []
+                    arcnames = []
+                    for file_info, local_path in collected_files:
+                        file_paths.append(local_path)
+                        # file_info.name에는 이미 하위 폴더 경로가 포함되어 있음
+                        arcnames.append(file_info.name)
+
+                    self.compression_handler.compress_files_with_structure(
                         file_paths,
+                        arcnames,
                         archive_path
                     )
 
                     logger.info(f"압축 완료: {archive_name}")
 
-                    # 압축 후 원본 파일 삭제
+                    # 압축 후 원본 파일 삭제 (폴더 구조도 함께 정리)
                     for _, local_path in collected_files:
                         try:
                             os.remove(local_path)
+                            # 빈 디렉토리 정리 시도
+                            parent_dir = os.path.dirname(local_path)
+                            while parent_dir != save_path and os.path.exists(parent_dir):
+                                try:
+                                    if not os.listdir(parent_dir):  # 빈 디렉토리인 경우
+                                        os.rmdir(parent_dir)
+                                        parent_dir = os.path.dirname(parent_dir)
+                                    else:
+                                        break
+                                except:
+                                    break
                         except Exception as e:
                             logger.warning(f"압축 후 원본 삭제 실패: {local_path} - {e}")
 
