@@ -21,7 +21,7 @@ class MainFrame(wx.Frame):
     """메인 프레임"""
 
     def __init__(self):
-        super().__init__(None, title="로그 수집 유틸리티",
+        super().__init__(None, title="로그 수집 유틸리티 V0.1(2025-10-22)",
                         size=(650, 800),
                         style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX))
 
