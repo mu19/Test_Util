@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
+# PyInstaller files
+*.spec
+
 # Virtual environments
 .venv
 
@@ -16,6 +19,10 @@ nul
 # Test files
 test_*.py
 run_*.bat
+
+# Runtime files
+config/config.json
+logs/
 
 # IDE
 .vscode/
