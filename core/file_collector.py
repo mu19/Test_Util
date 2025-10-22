@@ -122,17 +122,35 @@ class FileCollector:
 
             logger.info(f"수집 대상: {result.total_files}개 파일, {FilterEngine.get_size_str(result.total_size)}")
 
+            # 저장 디렉토리 결정
+            # 압축하지 않을 경우 타임스탬프 폴더에 저장
+            if not config.compress:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y-%m-%d %H.%M.%S")
+                # 압축 파일명 규칙과 동일하게 폴더명 생성
+                folder_name = self.compression_handler.create_archive_name(
+                    config.source_type.value,
+                    timestamp=True
+                )
+                # 확장자 제거
+                folder_name = os.path.splitext(folder_name)[0]
+                if folder_name.endswith('.tar'):
+                    folder_name = os.path.splitext(folder_name)[0]
+
+                save_path = os.path.join(save_path, folder_name)
+
             # 저장 디렉토리 생성
             self.local_service.create_directory(save_path)
 
-            # 원격 파일의 경우 먼저 압축한 후 다운로드
-            if config.is_remote() and len(files) > 0:
+            # 원격 파일의 경우 압축 옵션에 따라 처리
+            if config.is_remote() and config.compress and len(files) > 0:
+                # 압축 옵션이 활성화된 경우: 원격 압축 → 다운로드
                 result = self._collect_remote_with_compression(
                     files, config, save_path, progress_callback, cancel_token, result
                 )
                 return result
 
-            # 로컬 파일 수집 (기존 로직)
+            # 로컬 파일 또는 압축하지 않는 원격 파일 수집
             collected_files = []
 
             for idx, file_info in enumerate(files, 1):
@@ -242,12 +260,26 @@ class FileCollector:
                 delete_success = 0
                 delete_fail = 0
 
+                # 원격 파일의 경우 디렉토리 정보 수집 (빈 폴더 삭제용)
+                remote_directories = set()
+
                 for file_info, _ in collected_files:
                     try:
+                        full_path = file_info.get_full_path()
+
                         if config.is_remote():
-                            self.remote_service.delete_file(file_info.get_full_path())
+                            self.remote_service.delete_file(full_path)
+
+                            # 파일이 속한 디렉토리 경로 저장
+                            import posixpath
+                            dir_path = posixpath.dirname(full_path)
+
+                            # 베이스 경로가 아닌 경우에만 추가 (하위 폴더가 있는 경우)
+                            if dir_path and dir_path != config.path:
+                                remote_directories.add(dir_path)
+                                logger.debug(f"디렉토리 추가: {dir_path} (파일: {file_info.name})")
                         else:
-                            self.local_service.delete_file(file_info.get_full_path())
+                            self.local_service.delete_file(full_path)
 
                         delete_success += 1
 
@@ -256,6 +288,41 @@ class FileCollector:
                         delete_fail += 1
 
                 logger.info(f"원본 파일 삭제 완료: 성공 {delete_success}개, 실패 {delete_fail}개")
+
+                # 원격 파일인 경우 빈 디렉토리 정리
+                if config.is_remote() and remote_directories:
+                    logger.info(f"빈 디렉토리 정리 시작... ({len(remote_directories)}개 경로)")
+                    import posixpath
+
+                    # 디렉토리를 깊이 순으로 정렬 (하위 디렉토리부터 삭제)
+                    sorted_dirs = sorted(remote_directories, key=lambda x: x.count('/'), reverse=True)
+
+                    logger.debug(f"정리 대상 디렉토리: {sorted_dirs}")
+
+                    removed_dirs = 0
+                    for dir_path in sorted_dirs:
+                        try:
+                            # 베이스 경로까지 상위로 올라가며 빈 디렉토리 삭제
+                            current_dir = dir_path
+                            base_path = config.path
+
+                            while current_dir and current_dir != base_path and current_dir != '/':
+                                if self.remote_service.remove_empty_directory(current_dir):
+                                    removed_dirs += 1
+                                    logger.info(f"빈 디렉토리 삭제됨: {current_dir}")
+                                    # 상위 디렉토리로 이동
+                                    current_dir = posixpath.dirname(current_dir)
+                                else:
+                                    # 디렉토리가 비어있지 않으면 상위로 올라가지 않음
+                                    logger.debug(f"디렉토리가 비어있지 않음: {current_dir}")
+                                    break
+                        except Exception as e:
+                            logger.warning(f"디렉토리 정리 실패: {dir_path} - {e}")
+
+                    if removed_dirs > 0:
+                        logger.info(f"빈 디렉토리 정리 완료: {removed_dirs}개 삭제")
+                    else:
+                        logger.info("정리된 빈 디렉토리 없음")
 
             # 최종 진행률
             if progress_callback:
@@ -515,15 +582,64 @@ class FileCollector:
                 delete_success = 0
                 delete_fail = 0
 
+                # 원격 파일의 경우 디렉토리 정보 수집 (빈 폴더 삭제용)
+                remote_directories = set()
+
                 for file_info in files:
                     try:
-                        self.remote_service.delete_file(file_info.get_full_path())
+                        full_path = file_info.get_full_path()
+                        self.remote_service.delete_file(full_path)
+
+                        # 파일이 속한 디렉토리 경로 저장
+                        import posixpath
+                        dir_path = posixpath.dirname(full_path)
+
+                        # 베이스 경로가 아닌 경우에만 추가 (하위 폴더가 있는 경우)
+                        if dir_path and dir_path != config.path:
+                            remote_directories.add(dir_path)
+                            logger.debug(f"디렉토리 추가: {dir_path} (파일: {file_info.name})")
+
                         delete_success += 1
                     except Exception as e:
                         logger.warning(f"원본 파일 삭제 실패: {file_info.name} - {e}")
                         delete_fail += 1
 
                 logger.info(f"원본 파일 삭제 완료: 성공 {delete_success}개, 실패 {delete_fail}개")
+
+                # 원격 파일인 경우 빈 디렉토리 정리
+                if remote_directories:
+                    logger.info(f"빈 디렉토리 정리 시작... ({len(remote_directories)}개 경로)")
+                    import posixpath
+
+                    # 디렉토리를 깊이 순으로 정렬 (하위 디렉토리부터 삭제)
+                    sorted_dirs = sorted(remote_directories, key=lambda x: x.count('/'), reverse=True)
+
+                    logger.debug(f"정리 대상 디렉토리: {sorted_dirs}")
+
+                    removed_dirs = 0
+                    for dir_path in sorted_dirs:
+                        try:
+                            # 베이스 경로까지 상위로 올라가며 빈 디렉토리 삭제
+                            current_dir = dir_path
+                            base_path = config.path
+
+                            while current_dir and current_dir != base_path and current_dir != '/':
+                                if self.remote_service.remove_empty_directory(current_dir):
+                                    removed_dirs += 1
+                                    logger.info(f"빈 디렉토리 삭제됨: {current_dir}")
+                                    # 상위 디렉토리로 이동
+                                    current_dir = posixpath.dirname(current_dir)
+                                else:
+                                    # 디렉토리가 비어있지 않으면 상위로 올라가지 않음
+                                    logger.debug(f"디렉토리가 비어있지 않음: {current_dir}")
+                                    break
+                        except Exception as e:
+                            logger.warning(f"디렉토리 정리 실패: {dir_path} - {e}")
+
+                    if removed_dirs > 0:
+                        logger.info(f"빈 디렉토리 정리 완료: {removed_dirs}개 삭제")
+                    else:
+                        logger.info("정리된 빈 디렉토리 없음")
 
             # 결과 업데이트
             result.collected_files = len(files)

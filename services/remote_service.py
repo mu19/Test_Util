@@ -117,6 +117,30 @@ class RemoteFileService:
             logger.error(f"원격 파일 삭제 실패: {e}")
             raise
 
+    def remove_empty_directory(self, remote_path: str) -> bool:
+        """
+        빈 디렉토리 삭제
+
+        Args:
+            remote_path: 삭제할 원격 디렉토리 경로
+
+        Returns:
+            삭제 성공 여부
+
+        Raises:
+            SSHConnectionError: SSH 연결되지 않음
+        """
+        if not self.ssh_manager.is_connected():
+            raise SSHConnectionError("SSH에 연결되지 않았습니다.")
+
+        try:
+            result = self.ssh_manager.remove_empty_directory(remote_path)
+            return result
+
+        except Exception as e:
+            logger.debug(f"빈 디렉토리 삭제 실패: {remote_path} - {e}")
+            return False
+
     def get_file_info(self, remote_path: str) -> FileInfo:
         """
         원격 파일 정보 조회

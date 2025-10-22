@@ -176,11 +176,12 @@ class SettingsDialog(wx.Dialog):
         path_ctrl = wx.TextCtrl(panel)
         path_sizer.Add(path_ctrl, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
 
-        # 찾아보기 버튼
-        browse_btn = wx.Button(panel, label="찾아보기...")
-        browse_btn.Bind(wx.EVT_BUTTON,
-                       lambda e: self.on_browse_path(log_type))
-        path_sizer.Add(browse_btn, 0)
+        # 찾아보기 버튼 (로컬 경로만 표시)
+        if log_type == LogSourceType.WINDOWS_CLIENT:
+            browse_btn = wx.Button(panel, label="찾아보기...")
+            browse_btn.Bind(wx.EVT_BUTTON,
+                           lambda e: self.on_browse_path(log_type))
+            path_sizer.Add(browse_btn, 0)
 
         box_sizer.Add(path_sizer, 0, wx.ALL | wx.EXPAND, 5)
 

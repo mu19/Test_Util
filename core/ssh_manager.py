@@ -404,6 +404,42 @@ class SSHManager:
             logger.error(f"파일 삭제 실패: {e}")
             raise
 
+    def remove_empty_directory(self, remote_path: str) -> bool:
+        """
+        빈 디렉토리 삭제
+
+        Args:
+            remote_path: 삭제할 원격 디렉토리 경로
+
+        Returns:
+            삭제 성공 여부
+
+        Raises:
+            SSHConnectionError: 연결되지 않은 경우
+        """
+        if not self.is_connected():
+            raise SSHConnectionError("SSH에 연결되지 않았습니다.")
+
+        try:
+            # 디렉토리가 비어있는지 확인
+            files = self._sftp_client.listdir(remote_path)
+            if len(files) == 0:
+                logger.info(f"빈 디렉토리 삭제: {remote_path}")
+                self._sftp_client.rmdir(remote_path)
+                logger.debug(f"디렉토리 삭제 완료: {remote_path}")
+                return True
+            else:
+                logger.debug(f"디렉토리가 비어있지 않음: {remote_path} ({len(files)}개 파일)")
+                return False
+
+        except FileNotFoundError:
+            logger.debug(f"디렉토리를 찾을 수 없음: {remote_path}")
+            return False
+
+        except Exception as e:
+            logger.debug(f"디렉토리 삭제 실패: {remote_path} - {e}")
+            return False
+
     def get_file_stat(self, remote_path: str) -> FileInfo:
         """
         원격 파일 정보 조회
@@ -500,6 +536,56 @@ class SSHManager:
 
         except Exception as e:
             logger.error(f"명령 실행 실패: {e}")
+            raise
+
+    def get_disk_usage(self, path: str = "/tmp") -> tuple[int, int, int, str]:
+        """
+        원격 디스크 사용량 조회 (경로가 마운트된 파티션 기준)
+
+        Args:
+            path: 확인할 경로 (기본값: /tmp)
+
+        Returns:
+            (총 용량, 사용 용량, 사용 가능 용량, 마운트 포인트) 튜플 (바이트 단위)
+
+        Raises:
+            SSHConnectionError: 연결되지 않은 경우
+        """
+        if not self.is_connected():
+            raise SSHConnectionError("SSH에 연결되지 않았습니다.")
+
+        try:
+            # df 명령으로 디스크 사용량 조회 (킬로바이트 단위)
+            # -P 옵션: POSIX 형식 출력 (한 줄로 출력)
+            command = f"df -Pk '{path}' | tail -1"
+            stdout, stderr, exit_code = self.execute_command(command)
+
+            if exit_code != 0:
+                raise Exception(f"df 명령 실패: {stderr}")
+
+            # 출력 파싱: Filesystem 1K-blocks Used Available Use% Mounted
+            parts = stdout.split()
+            if len(parts) < 6:
+                raise Exception(f"df 출력 형식 오류: {stdout}")
+
+            filesystem = parts[0]
+            total_kb = int(parts[1])
+            used_kb = int(parts[2])
+            available_kb = int(parts[3])
+            mount_point = parts[5]
+
+            # 킬로바이트를 바이트로 변환
+            total = total_kb * 1024
+            used = used_kb * 1024
+            available = available_kb * 1024
+
+            logger.debug(f"디스크 사용량 ({path}): 파티션={filesystem}, 마운트={mount_point}, "
+                        f"총 {total} bytes, 사용 {used} bytes, 가용 {available} bytes")
+
+            return total, used, available, mount_point
+
+        except Exception as e:
+            logger.error(f"디스크 사용량 조회 실패: {e}")
             raise
 
     def __enter__(self):

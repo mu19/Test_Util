@@ -127,11 +127,19 @@ c:\Laboratory\Test Util\
 - SSH Keep-alive로 장시간 연결 유지
 - 권한 오류 파일 자동 건너뛰기
 - 작업 중단 및 재시작 지원
+- 원격 서버 빈 폴더 자동 정리
 
 ### 성능
 - 비동기 파일 처리로 UI 응답성 유지
 - 원격 압축으로 네트워크 전송량 감소
 - 진행률 실시간 표시
+- 디스크 용량 실시간 모니터링
+
+### 유연성
+- 압축 옵션에 따른 수집 방식 자동 전환
+  - 압축 활성화: 원격 서버에서 압축 후 다운로드
+  - 압축 비활성화: 개별 파일 다운로드, 타임스탬프 폴더에 저장
+- 원격/로컬 파일 통합 관리
 
 ### 확장성
 - Layer Architecture 설계
@@ -147,3 +155,4 @@ c:\Laboratory\Test Util\
 - **Language**: Python 3.13
 - **IDE**: Visual Studio Code
 - **Version Control**: Git
+- **Platform**: Win 11

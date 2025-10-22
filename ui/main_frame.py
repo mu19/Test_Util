@@ -880,14 +880,60 @@ class MainFrame(wx.Frame):
 
     def update_status_bar(self):
         """상태 표시줄 업데이트"""
+        # SSH 연결 상태
         if self.ssh_connected:
             ip = self.ip_ctrl.GetValue()
             port = self.port_ctrl.GetValue()
-            status = f"SSH: 연결됨 ({ip}:{port}) | 준비"
+            status = f"SSH: 연결됨 ({ip}:{port})"
         else:
-            status = "SSH: 미연결 | 준비"
+            status = "SSH: 미연결"
+
+        # 디스크 용량 정보 추가
+        disk_info = self._get_disk_usage_info()
+        if disk_info:
+            status += f" | {disk_info}"
+        else:
+            status += " | 준비"
 
         self.SetStatusText(status)
+
+    def _get_disk_usage_info(self) -> str:
+        """
+        디스크 사용량 정보 조회
+
+        Returns:
+            포맷된 디스크 사용량 문자열 또는 빈 문자열
+        """
+        try:
+            info_parts = []
+
+            # 원격 서버 /tmp 디스크 용량 (SSH 연결된 경우만)
+            if self.ssh_connected:
+                try:
+                    total, used, available, mount_point = self.ssh_manager.get_disk_usage("/tmp")
+                    available_gb = available / (1024 ** 3)
+                    # 마운트 포인트 정보 표시
+                    info_parts.append(f"원격({mount_point}): {available_gb:.1f}GB 가용")
+                except Exception as e:
+                    logger.debug(f"원격 디스크 용량 조회 실패: {e}")
+                    info_parts.append("원격: 조회 실패")
+
+            # 로컬 스토리지 용량
+            try:
+                save_path = self.settings.get_save_path()
+                import shutil
+                total, used, free = shutil.disk_usage(save_path)
+                free_gb = free / (1024 ** 3)
+                info_parts.append(f"로컬: {free_gb:.1f}GB 가용")
+            except Exception as e:
+                logger.debug(f"로컬 디스크 용량 조회 실패: {e}")
+                info_parts.append("로컬: 조회 실패")
+
+            return " | ".join(info_parts) if info_parts else ""
+
+        except Exception as e:
+            logger.debug(f"디스크 사용량 정보 조회 실패: {e}")
+            return ""
 
     def refresh_ui_from_settings(self):
         """설정 변경 후 UI 업데이트"""
