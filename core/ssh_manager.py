@@ -57,7 +57,12 @@ class SSHManager:
 
             # SSH 클라이언트 생성
             self._ssh_client = paramiko.SSHClient()
+
+            # 호스트 키 정책 설정 (최초 연결 시 호스트 키 자동 수락)
+            # AutoAddPolicy: 알려지지 않은 호스트 키를 자동으로 추가
+            # 최초 연결 시 사용자에게 확인 요청 없이 자동으로 수락됨
             self._ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            logger.debug("호스트 키 자동 수락 정책 설정 완료")
 
             # 연결
             self._ssh_client.connect(
