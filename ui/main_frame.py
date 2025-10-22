@@ -523,6 +523,57 @@ class MainFrame(wx.Frame):
 
         logger.info(f"UI 필터 적용: {config.filter_type.value}, 값: {config.filter_value}")
 
+    def validate_filter_config(self, config):
+        """필터 설정 유효성 검증"""
+        from core.models import FilterType
+        from datetime import datetime
+
+        # 날짜 필터인 경우 날짜 형식 검증
+        if config.filter_type == FilterType.DATE:
+            if not config.filter_value:
+                wx.MessageBox(
+                    "날짜 필터가 선택되었지만 날짜가 입력되지 않았습니다.\n\n"
+                    "지원 형식:\n"
+                    "- YYYY-MM-DD (예: 2025-10-22)\n"
+                    "- YYYY-MM-DD HH:MM:SS (예: 2025-10-22 14:30:00)",
+                    "날짜 입력 필요",
+                    wx.OK | wx.ICON_WARNING
+                )
+                return False
+
+            # 날짜 형식 검증
+            try:
+                if 'T' in config.filter_value or ' ' in config.filter_value:
+                    # 시간 포함
+                    date_str = config.filter_value.replace('T', ' ')
+                    datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    # 날짜만
+                    datetime.strptime(config.filter_value, '%Y-%m-%d')
+            except ValueError as e:
+                wx.MessageBox(
+                    f"잘못된 날짜 형식입니다: {config.filter_value}\n\n"
+                    "지원 형식:\n"
+                    "- YYYY-MM-DD (예: 2025-10-22)\n"
+                    "- YYYY-MM-DD HH:MM:SS (예: 2025-10-22 14:30:00)\n\n"
+                    f"오류: {str(e)}",
+                    "날짜 형식 오류",
+                    wx.OK | wx.ICON_ERROR
+                )
+                return False
+
+        # 정규식 필터인 경우 패턴 검증 (선택사항)
+        elif config.filter_type == FilterType.REGEX:
+            if not config.filter_value:
+                wx.MessageBox(
+                    "정규식 필터가 선택되었지만 패턴이 입력되지 않았습니다.",
+                    "패턴 입력 필요",
+                    wx.OK | wx.ICON_WARNING
+                )
+                return False
+
+        return True
+
     def on_collect(self, log_type):
         """로그 수집"""
         # 연결 확인
@@ -535,6 +586,10 @@ class MainFrame(wx.Frame):
         # UI에서 선택한 필터 옵션을 config에 적용
         self.apply_ui_filter_to_config(log_type, config)
 
+        # 날짜 필터 유효성 검증
+        if not self.validate_filter_config(config):
+            return
+
         # 백그라운드 스레드에서 수집 (필터가 적용된 config 전달)
         self.start_collection(log_type, config)
 
@@ -545,6 +600,26 @@ class MainFrame(wx.Frame):
             wx.MessageBox("먼저 SSH에 연결해주세요.", "알림",
                          wx.OK | wx.ICON_WARNING)
             return
+
+        # 모든 로그 타입의 필터 설정 유효성 검증
+        log_types = [
+            LogSourceType.LINUX_KERNEL,
+            LogSourceType.LINUX_SERVER,
+            LogSourceType.WINDOWS_CLIENT
+        ]
+
+        for log_type in log_types:
+            config = self.settings.get_log_source_config(log_type)
+            self.apply_ui_filter_to_config(log_type, config)
+
+            if not self.validate_filter_config(config):
+                # 어느 로그의 필터 설정이 잘못되었는지 표시
+                wx.MessageBox(
+                    f"{config.get_display_name()} 필터 설정을 확인해주세요.",
+                    "필터 설정 오류",
+                    wx.OK | wx.ICON_WARNING
+                )
+                return
 
         # 확인 메시지
         result = wx.MessageBox(

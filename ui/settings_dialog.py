@@ -147,19 +147,19 @@ class SettingsDialog(wx.Dialog):
 
         # 커널 로그
         self.path_ctrls[LogSourceType.LINUX_KERNEL] = self.create_path_section(
-            panel, sizer, "커널 로그 경로", LogSourceType.LINUX_KERNEL,
-            "리눅스 커널 로그 파일 경로 (예: /var/log/kern.log)"
+            panel, sizer, "제어기 커널 로그 경로", LogSourceType.LINUX_KERNEL,
+            "리눅스 커널 로그 파일 경로 (예: /var/log)"
         )
 
         # 서버 로그
         self.path_ctrls[LogSourceType.LINUX_SERVER] = self.create_path_section(
-            panel, sizer, "서버 로그 경로", LogSourceType.LINUX_SERVER,
-            "서버 애플리케이션 로그 디렉토리 경로"
+            panel, sizer, "제어기 로그 경로", LogSourceType.LINUX_SERVER,
+            "서버 애플리케이션 로그 디렉토리 경로(예: /home/user/log)"
         )
 
         # 윈도우 클라이언트 로그
         self.path_ctrls[LogSourceType.WINDOWS_CLIENT] = self.create_path_section(
-            panel, sizer, "클라이언트 로그 경로", LogSourceType.WINDOWS_CLIENT,
+            panel, sizer, "사용자 SW 로그 경로", LogSourceType.WINDOWS_CLIENT,
             "윈도우 클라이언트 로그 디렉토리 경로 (예: C:\\Logs)"
         )
 
@@ -232,7 +232,7 @@ class SettingsDialog(wx.Dialog):
         compress_sizer.Add(self.compress_default_check, 0, wx.ALL, 5)
 
         compress_help = wx.StaticText(panel,
-            label="파일 수집 후 자동으로 압축할지 여부의 기본값입니다.")
+            label="파일 수집시 자동으로 압축할지 여부의 기본값입니다.")
         compress_help.SetFont(self.default_font)
         compress_help.SetForegroundColour(wx.Colour(100, 100, 100))
         compress_sizer.Add(compress_help, 0, wx.ALL, 5)
