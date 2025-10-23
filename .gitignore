@@ -8,6 +8,7 @@ wheels/
 
 # PyInstaller files
 *.spec
+!log_collector.spec
 
 # Virtual environments
 .venv
